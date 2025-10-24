@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kiali
+  namespace: monitoring
+  labels:
+    app: kiali
+data:
+  config.yaml: |
+    # Kiali Configuration
+
+    # Server configuration
+    server:
+      port: 20001
+      web_root: /
+      web_fqdn: ""
+      web_schema: ""
+
+    # Authentication strategy (anonymous for demo)
+    auth:
+      strategy: anonymous
+
+    # Deployment configuration
+    deployment:
+      accessible_namespaces:
+      - "**"
+      cluster_wide_access: true
+      view_only_mode: false
+
+    # Kubernetes-only mode (no service mesh)
+    kiali_feature_flags:
+      istio_injection_action: false
+      istio_upgrade_action: false
+
+    # External services configuration
+    external_services:
+      # Prometheus integration
+      prometheus:
+        url: "http://prometheus.monitoring.svc.cluster.local:9090"
+        cache_enabled: true
+        cache_duration: 10
+        cache_expiration: 300
+
+      # Jaeger integration
+      tracing:
+        enabled: true
+        in_cluster_url: "http://jaeger-query.monitoring.svc.cluster.local:16686"
+        url: "http://localhost:30002"
+        use_grpc: false
+        namespace_selector: true
+
+      # Grafana integration
+      grafana:
+        enabled: true
+        in_cluster_url: "http://grafana.monitoring.svc.cluster.local:3000"
+        url: "http://localhost:3000"
+        auth:
+          type: "none"
+
+      # Istio configuration (completely disabled)
+      istio:
+        root_namespace: ""
+        component_status:
+          enabled: false
+          components: []
+        config_map_name: "istio"
+        envoy_admin_local_port: 15000
+        istiod_deployment_name: "istiod"
+        istiod_pod_monitoring_port: 15014
+        istio_sidecar_injector_config_map_name: "istio-sidecar-injector"
+        url_service_version: ""
+        istio_api_enabled: false
+
+    # Istio labels configuration
+    istio_namespace: ""
+    istio_labels:
+      app_label_name: "app"
+      version_label_name: "version"
+
+    # Kubernetes configuration
+    kubernetes_config:
+      cache_enabled: true
+      cache_duration: 300
+      excluded_workloads:
+      - "CronJob"
+      - "DeploymentConfig"
+      - "Job"
+      - "ReplicationController"
+
+    # API configuration
+    api:
+      namespaces:
+        exclude:
+        - "kube-.*"
+        - "openshift.*"
+        - "ibm.*"
+        - "istio-system"
+
+    # Health configuration
+    health_config:
+      rate:
+      - namespace: ".*"
+        kind: ".*"
+        name: ".*"
+        tolerance:
+        - code: "^5\\d\\d$"
+          degraded: 0
+          failure: 10
+        - code: "^4\\d\\d$"
+          degraded: 10
+          failure: 20
+
+    # Graph settings
+    graph:
+      settings:
+        fontLabel: 13
+        minFontBadge: 7
+        minFontLabel: 10
+
+    # Refresh intervals (in seconds)
+    refresh_interval: 15

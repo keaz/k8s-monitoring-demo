@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: victoriatraces
+  namespace: monitoring
+  labels:
+    app: victoriatraces
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: victoriatraces
+  template:
+    metadata:
+      labels:
+        app: victoriatraces
+    spec:
+      containers:
+      - name: victoriatraces
+        image: victoriametrics/victoria-traces:v0.1.0
+        args:
+          - -storageDataPath=/storage
+        ports:
+        - containerPort: 8428
+          name: http
+        - containerPort: 14250
+          name: jaeger-grpc
+        - containerPort: 9411
+          name: zipkin
+        volumeMounts:
+        - name: storage
+          mountPath: /storage
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: victoriatraces-storage
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoriatraces
+  namespace: monitoring
+  labels:
+    app: victoriatraces
+spec:
+  type: NodePort
+  ports:
+  - port: 8428
+    targetPort: 8428
+    nodePort: 30004
+    name: http
+  - port: 4317
+    targetPort: 4317
+    name: otlp-grpc
+  - port: 4318
+    targetPort: 4318
+    name: otlp-http
+  - port: 14250
+    targetPort: 14250
+    name: jaeger-grpc
+  - port: 9411
+    targetPort: 9411
+    name: zipkin
+  selector:
+    app: victoriatraces

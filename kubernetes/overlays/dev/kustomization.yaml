@@ -1,0 +1,84 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base
+
+# NOTE: commonLabels applies to both resources AND selectors which breaks Service endpoints
+# Use labels instead to only apply to metadata
+labels:
+- pairs:
+    environment: dev
+    managed-by: kustomize
+
+# Optionally adjust replicas for dev environment
+replicas:
+- name: prometheus
+  count: 1
+- name: grafana
+  count: 1
+- name: otel-collector
+  count: 1
+- name: service-a
+  count: 1
+- name: service-b
+  count: 1
+- name: service-c
+  count: 1
+
+# Add resource limits suitable for dev
+patchesStrategicMerge:
+- |-
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: service-a
+    namespace: services
+  spec:
+    template:
+      spec:
+        containers:
+        - name: service-a
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+- |-
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: service-b
+    namespace: services
+  spec:
+    template:
+      spec:
+        containers:
+        - name: service-b
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+- |-
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: service-c
+    namespace: services
+  spec:
+    template:
+      spec:
+        containers:
+        - name: service-c
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi

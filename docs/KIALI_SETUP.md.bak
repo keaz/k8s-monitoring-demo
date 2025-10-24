@@ -1,0 +1,597 @@
+# Kiali Integration with Jaeger and Prometheus
+
+## Overview
+
+Kiali is a service mesh observability tool that provides real-time visualization of service topology, traffic flow, and performance metrics. This guide explains the Kiali integration in this monitoring stack.
+
+**Important Note:** Kiali is primarily designed for Istio service mesh environments. In this setup, we're using Kiali in **standalone mode** (without Istio), which has limited but still useful functionality for observability and integration with Jaeger and Prometheus.
+
+## What Works Without Istio
+
+### ✅ Available Features
+
+1. **Prometheus Integration**
+   - View metrics from Prometheus
+   - Service-level metrics visualization
+   - Request rates, error rates, latencies
+
+2. **Jaeger Integration**
+   - Direct links to distributed traces
+   - Click-through from services to traces
+   - Trace visualization integration
+
+3. **Grafana Integration**
+   - Links to Grafana dashboards
+   - Unified observability experience
+
+4. **Basic Kubernetes Resources**
+   - View deployments, services, pods
+   - Resource health status
+   - Namespace overview
+
+### ❌ Limited Features (Requires Istio)
+
+1. **Service Graph**
+   - Full service mesh topology
+   - Traffic flow animation
+   - Protocol-aware edges (HTTP, gRPC, TCP)
+
+2. **Service Mesh Configuration**
+   - VirtualServices, DestinationRules
+   - Traffic management
+   - Circuit breakers, retries
+
+3. **mTLS and Security**
+   - Certificate management
+   - AuthorizationPolicies
+   - Security posture
+
+4. **Advanced Traffic Metrics**
+   - Per-protocol metrics
+   - Traffic splitting visualization
+   - Canary deployments
+
+## Architecture
+
+```
+Kiali Dashboard
+    ├─ Prometheus (metrics)
+    │  └─ Service metrics, health
+    ├─ Jaeger (traces)
+    │  └─ Distributed tracing
+    ├─ Grafana (dashboards)
+    │  └─ Custom visualizations
+    └─ Kubernetes API
+       └─ Resources, workloads
+```
+
+## Deployment Configuration
+
+### Components Created
+
+1. **Kiali RBAC** (`kubernetes/base/kiali/kiali-rbac.yaml`)
+   - ServiceAccount with cluster-wide read permissions
+   - ClusterRole for Kubernetes resource access
+   - ClusterRoleBinding
+
+2. **Kiali ConfigMap** (`kubernetes/base/kiali/kiali-config.yaml`)
+   - Anonymous authentication (demo mode)
+   - External services configuration
+   - Istio features disabled
+
+3. **Kiali Deployment** (`kubernetes/base/kiali/kiali-deployment.yaml`)
+   - Kiali v1.73
+   - NodePort service on port 30005
+   - Health checks and resource limits
+
+### Service Labels Enhancement
+
+All services have been enhanced with Kubernetes recommended labels:
+
+```yaml
+labels:
+  app: service-name
+  version: v1
+  app.kubernetes.io/name: service-name
+  app.kubernetes.io/version: v1
+```
+
+These labels help Kiali (and other tools) better understand service relationships and versions.
+
+## Accessing Kiali
+
+### Option 1: Port Forward (Recommended)
+
+```bash
+# Forward Kiali service to local port
+kubectl port-forward -n monitoring svc/kiali 20001:20001
+
+# Access Kiali UI
+open http://localhost:20001
+```
+
+### Option 2: NodePort (Requires Kind Port Mapping)
+
+**Note:** The current kind cluster doesn't have port 30005 mapped. To use NodePort access, you would need to recreate the cluster with the port mapping or use port-forward.
+
+```bash
+# If you recreate the kind cluster with port 30005 mapped:
+open http://localhost:30005
+```
+
+## Using Kiali
+
+### 1. Access the Dashboard
+
+After port-forwarding, navigate to `http://localhost:20001`.
+
+**Authentication:** Configured for anonymous access (no login required).
+
+### 2. View Namespaces
+
+- Click on "Overview" in the left sidebar
+- See all namespaces: `monitoring`, `services`, etc.
+- View namespace health and resource counts
+
+### 3. View Services (Limited)
+
+Due to Istio requirements, the full service catalog may show errors. However:
+
+- You can still see Kubernetes deployments
+- View pod status and health
+- Access resource YAML definitions
+
+### 4. Access Jaeger Traces
+
+**From Kiali:**
+
+1. Navigate to a specific service (if available)
+2. Look for "View in Tracing" links
+3. Click to open Jaeger UI with relevant traces
+
+**Direct Link:**
+```bash
+# Jaeger is also directly accessible
+open http://localhost:30002
+```
+
+### 5. View Prometheus Metrics
+
+**From Kiali:**
+
+1. Navigate to "Workloads" or "Services"
+2. View metrics panels (if available)
+3. Metrics are pulled from Prometheus in real-time
+
+**Direct Link:**
+```bash
+# Prometheus is also directly accessible
+open http://localhost:9090
+```
+
+### 6. Access Grafana Dashboards
+
+**From Kiali:**
+
+1. Look for Grafana dashboard links in the UI
+2. Click to open related dashboards
+
+**Direct Link:**
+```bash
+# Grafana is also directly accessible
+open http://localhost:3000
+```
+
+## Configuration Details
+
+### External Services Configuration
+
+Kiali is configured to connect to:
+
+```yaml
+external_services:
+  prometheus:
+    url: "http://prometheus.monitoring.svc.cluster.local:9090"
+
+  tracing:
+    enabled: true
+    in_cluster_url: "http://jaeger-query.monitoring.svc.cluster.local:16686"
+    url: "http://localhost:30002"
+
+  grafana:
+    enabled: true
+    in_cluster_url: "http://grafana.monitoring.svc.cluster.local:3000"
+    url: "http://localhost:3000"
+
+  istio:
+    component_status:
+      enabled: false
+```
+
+### Authentication Strategy
+
+```yaml
+auth:
+  strategy: anonymous
+```
+
+**For Production:** Change to `token` or `openid` for secure access.
+
+### Accessible Namespaces
+
+```yaml
+deployment:
+  accessible_namespaces:
+  - "**"
+  cluster_wide_access: true
+```
+
+Kiali can see all namespaces in the cluster.
+
+## Verification
+
+### Check Kiali Status
+
+```bash
+# Check pod status
+kubectl get pods -n monitoring -l app=kiali
+
+# Should show:
+# NAME                     READY   STATUS    RUNNING
+# kiali-xxxxxxxxxx-xxxxx   1/1     Running   0
+```
+
+### Check Service
+
+```bash
+# Check service
+kubectl get svc -n monitoring kiali
+
+# Should show NodePort service on port 30005
+```
+
+### Test API
+
+```bash
+# Port-forward Kiali
+kubectl port-forward -n monitoring svc/kiali 20001:20001 &
+
+# Check status endpoint
+curl http://localhost:20001/api/status | python3 -m json.tool
+
+# Should show:
+# {
+#   "status": { ... },
+#   "externalServices": [
+#     { "name": "Prometheus", "version": "2.47.0" },
+#     { "name": "Jaeger", "url": "..." }
+#   ]
+# }
+```
+
+## Integration with Existing Stack
+
+### Prometheus Metrics
+
+Kiali reads metrics from Prometheus including:
+
+- **Service metrics**: Generated by spanmetrics connector
+  - `calls_total`
+  - `duration_bucket`
+
+- **Container metrics**: From cAdvisor
+  - `container_cpu_usage_seconds_total`
+  - `container_memory_usage_bytes`
+
+- **Node metrics**: From Node Exporter
+  - `node_cpu_seconds_total`
+  - `node_memory_*`
+
+### Jaeger Traces
+
+Kiali provides direct integration:
+
+1. **Service → Traces**: Click on a service to view related traces
+2. **Trace Linking**: Seamless navigation between Kiali and Jaeger UI
+3. **Distributed Context**: View end-to-end request flows
+
+### Grafana Dashboards
+
+Kiali links to Grafana dashboards:
+
+- Service Performance Monitoring (SPM) dashboard
+- Custom service dashboards
+- Infrastructure dashboards
+
+## Troubleshooting
+
+### Issue 1: "Unable to proxy Istiod pods" Errors
+
+**Symptom**: Errors in logs about Istio control plane
+
+**Cause**: Kiali is looking for Istio (which is not installed)
+
+**Solution**: This is expected and harmless. Kiali works in standalone mode but will log these warnings.
+
+```bash
+# You'll see these warnings in logs:
+kubectl logs -n monitoring -l app=kiali | grep Istiod
+```
+
+**Resolution**: Configure Istio component status to false (already done):
+
+```yaml
+external_services:
+  istio:
+    component_status:
+      enabled: false
+```
+
+### Issue 2: Service Graph Not Showing
+
+**Symptom**: Service graph is empty or shows errors
+
+**Cause**: Service graph requires Istio sidecar proxies to generate traffic data
+
+**Solution**: Without Istio, use alternative visualizations:
+
+1. **Jaeger System Architecture**:
+   ```bash
+   open http://localhost:30002
+   # Navigate to: System Architecture → Dependencies
+   ```
+
+2. **Grafana Service Graph**:
+   ```bash
+   open http://localhost:3000
+   # Use service graph dashboards based on spanmetrics
+   ```
+
+3. **Prometheus Query**:
+   ```promql
+   # Service call graph from spanmetrics
+   traces_service_graph_request_total
+   ```
+
+### Issue 3: NodePort Not Accessible
+
+**Symptom**: Can't access Kiali on `http://localhost:30005`
+
+**Cause**: Kind cluster doesn't have port 30005 mapped to host
+
+**Solution**: Use port-forward instead:
+
+```bash
+kubectl port-forward -n monitoring svc/kiali 20001:20001
+open http://localhost:20001
+```
+
+### Issue 4: Authentication Required
+
+**Symptom**: Kiali asks for login credentials
+
+**Cause**: Anonymous authentication not configured correctly
+
+**Solution**: Verify ConfigMap:
+
+```bash
+kubectl get configmap kiali -n monitoring -o yaml | grep -A 2 "auth:"
+
+# Should show:
+# auth:
+#   strategy: anonymous
+```
+
+If not, update and restart:
+
+```bash
+kubectl edit configmap kiali -n monitoring
+# Set auth.strategy: anonymous
+
+kubectl rollout restart deployment/kiali -n monitoring
+```
+
+## Upgrading to Full Istio Integration
+
+If you want full Kiali functionality, install Istio:
+
+### Step 1: Install Istio
+
+```bash
+# Download Istio
+curl -L https://istio.io/downloadIstio | sh -
+cd istio-*
+
+# Install Istio
+export PATH=$PWD/bin:$PATH
+istioctl install --set profile=demo -y
+```
+
+### Step 2: Enable Sidecar Injection
+
+```bash
+# Label namespace for automatic sidecar injection
+kubectl label namespace services istio-injection=enabled
+
+# Restart deployments to inject sidecars
+kubectl rollout restart deployment -n services
+```
+
+### Step 3: Update Kiali Configuration
+
+```bash
+kubectl edit configmap kiali -n monitoring
+
+# Update:
+# istio_namespace: "istio-system"
+# external_services.istio.component_status.enabled: true
+```
+
+### Step 4: Restart Kiali
+
+```bash
+kubectl rollout restart deployment/kiali -n monitoring
+```
+
+After these steps, Kiali will have full service mesh capabilities including:
+- Real-time service graph
+- Traffic flow animation
+- mTLS visualization
+- Traffic management
+- Advanced metrics
+
+## Production Recommendations
+
+### 1. Enable Authentication
+
+**Token-based:**
+
+```yaml
+auth:
+  strategy: token
+```
+
+Users must provide a Kubernetes service account token.
+
+**OpenID Connect:**
+
+```yaml
+auth:
+  strategy: openid
+  openid:
+    client_id: "kiali"
+    issuer_uri: "https://your-idp.com"
+```
+
+### 2. Use TLS/HTTPS
+
+```yaml
+server:
+  web_schema: "https"
+
+# Mount TLS certificates
+volumes:
+- name: kiali-cert
+  secret:
+    secretName: kiali-tls
+```
+
+### 3. Resource Limits
+
+Current limits:
+
+```yaml
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+```
+
+Adjust based on cluster size and usage.
+
+### 4. High Availability
+
+For production HA:
+
+```yaml
+spec:
+  replicas: 2  # or 3
+```
+
+**Note:** Requires external session storage for consistency.
+
+### 5. Monitoring Kiali Itself
+
+Kiali exposes Prometheus metrics on port 9090:
+
+```promql
+# Kiali API request duration
+kiali_api_processing_duration_seconds
+
+# Kiali cache size
+kiali_cache_size
+```
+
+## API Examples
+
+### Get Namespaces
+
+```bash
+curl http://localhost:20001/api/namespaces | python3 -m json.tool
+```
+
+### Get Status
+
+```bash
+curl http://localhost:20001/api/status | python3 -m json.tool
+```
+
+### Get Configuration
+
+```bash
+curl http://localhost:20001/api/config | python3 -m json.tool
+```
+
+## Summary
+
+Kiali is successfully integrated with your monitoring stack:
+
+✅ **Deployed**: Kiali v1.73 running in monitoring namespace
+✅ **Prometheus Connected**: Pulling metrics from Prometheus
+✅ **Jaeger Connected**: Linking to distributed traces
+✅ **Grafana Connected**: Dashboard integration
+✅ **Service Labels**: Enhanced with version and app labels
+✅ **Authentication**: Anonymous mode for demo
+
+### Access Points
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| **Kiali** | http://localhost:20001 (port-forward) | Service observability |
+| **Jaeger** | http://localhost:30002 | Distributed tracing |
+| **Prometheus** | http://localhost:9090 | Metrics and querying |
+| **Grafana** | http://localhost:3000 | Dashboards |
+
+### Limitations in Non-Istio Mode
+
+- ⚠️ Service graph requires Istio sidecars
+- ⚠️ Traffic metrics limited to Prometheus data
+- ⚠️ No traffic management features
+- ⚠️ No mTLS visualization
+
+### Recommended Usage
+
+1. **Use Kiali** for unified access to all monitoring tools
+2. **Use Jaeger** directly for service dependency graph
+3. **Use Grafana** for detailed metrics and dashboards
+4. **Consider Istio** for full service mesh features
+
+## Next Steps
+
+1. **Access Kiali UI**:
+   ```bash
+   kubectl port-forward -n monitoring svc/kiali 20001:20001
+   open http://localhost:20001
+   ```
+
+2. **Generate Traffic**:
+   ```bash
+   ./scripts/generate-traffic.sh
+   ```
+
+3. **Explore Integration**:
+   - Click through to Jaeger traces
+   - View Prometheus metrics
+   - Access Grafana dashboards
+
+4. **Consider Istio** if you need full service mesh capabilities
+
+## References
+
+- [Kiali Documentation](https://kiali.io/docs/)
+- [Kiali without Istio](https://kiali.io/docs/faq/general/#does-kiali-require-istio)
+- [Jaeger Integration](https://kiali.io/docs/configuration/p8s-jaeger-grafana/)
+- [Prometheus Integration](https://kiali.io/docs/configuration/p8s-jaeger-grafana/prometheus/)

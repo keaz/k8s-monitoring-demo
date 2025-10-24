@@ -1,0 +1,167 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-collector
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+      component: collector
+  template:
+    metadata:
+      labels:
+        app: jaeger
+        component: collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "14269"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: jaeger-collector
+        image: jaegertracing/jaeger-collector:1.50
+        env:
+        # Storage configuration
+        - name: SPAN_STORAGE_TYPE
+          value: "badger"
+        - name: BADGER_EPHEMERAL
+          value: "false"
+        - name: BADGER_DIRECTORY_VALUE
+          value: "/badger/data"
+        - name: BADGER_DIRECTORY_KEY
+          value: "/badger/key"
+        - name: BADGER_SPAN_STORE_TTL
+          value: "168h"  # 7 days
+
+        # Collector configuration
+        - name: COLLECTOR_OTLP_ENABLED
+          value: "true"
+        - name: COLLECTOR_ZIPKIN_HOST_PORT
+          value: ":9411"
+
+        # Service Performance Monitoring (SPM)
+        - name: METRICS_STORAGE_TYPE
+          value: "prometheus"
+
+        # Sampling configuration
+        - name: SAMPLING_STRATEGIES_FILE
+          value: "/etc/jaeger/sampling.json"
+
+        ports:
+        - containerPort: 14250
+          name: grpc
+          protocol: TCP
+        - containerPort: 14268
+          name: http
+          protocol: TCP
+        - containerPort: 4317
+          name: otlp-grpc
+          protocol: TCP
+        - containerPort: 4318
+          name: otlp-http
+          protocol: TCP
+        - containerPort: 9411
+          name: zipkin
+          protocol: TCP
+        - containerPort: 14269
+          name: admin
+          protocol: TCP
+        - containerPort: 16685
+          name: grpc-query
+          protocol: TCP
+
+        volumeMounts:
+        - name: badger-storage
+          mountPath: /badger
+        - name: sampling-config
+          mountPath: /etc/jaeger
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 14269
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 14269
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+
+      volumes:
+      - name: badger-storage
+        persistentVolumeClaim:
+          claimName: jaeger-storage
+      - name: sampling-config
+        configMap:
+          name: jaeger-sampling-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: collector
+spec:
+  type: ClusterIP
+  ports:
+  - port: 14250
+    targetPort: 14250
+    name: grpc
+  - port: 14268
+    targetPort: 14268
+    name: http
+  - port: 4317
+    targetPort: 4317
+    name: otlp-grpc
+  - port: 4318
+    targetPort: 4318
+    name: otlp-http
+  - port: 9411
+    targetPort: 9411
+    name: zipkin
+  - port: 14269
+    targetPort: 14269
+    name: admin
+  - port: 16685
+    targetPort: 16685
+    name: grpc-query
+  selector:
+    app: jaeger
+    component: collector
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-collector-headless
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: collector
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - port: 14250
+    targetPort: 14250
+    name: grpc
+  selector:
+    app: jaeger
+    component: collector

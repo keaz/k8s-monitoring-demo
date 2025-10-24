@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jaeger-query
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: query
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger
+      component: query
+  template:
+    metadata:
+      labels:
+        app: jaeger
+        component: query
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "16687"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: jaeger-query
+        image: jaegertracing/jaeger-query:1.50
+        env:
+        # Storage configuration - use grpc-plugin to connect to collector
+        - name: SPAN_STORAGE_TYPE
+          value: "grpc-plugin"
+        - name: GRPC_STORAGE_SERVER
+          value: "jaeger-collector:16685"
+
+        # Service Performance Monitoring (SPM)
+        - name: METRICS_STORAGE_TYPE
+          value: "prometheus"
+        - name: PROMETHEUS_SERVER_URL
+          value: "http://prometheus:9090"
+        - name: PROMETHEUS_QUERY_SUPPORT_SPANMETRICS_CONNECTOR
+          value: "true"
+        - name: PROMETHEUS_QUERY_NORMALIZE_CALLS
+          value: "true"
+        - name: PROMETHEUS_QUERY_NORMALIZE_DURATION
+          value: "true"
+
+        # Query configuration
+        - name: QUERY_BASE_PATH
+          value: "/"
+        - name: QUERY_UI_CONFIG
+          value: "/etc/jaeger/ui-config.json"
+
+        ports:
+        - containerPort: 16686
+          name: ui
+          protocol: TCP
+        - containerPort: 16687
+          name: admin
+          protocol: TCP
+
+        volumeMounts:
+        - name: ui-config
+          mountPath: /etc/jaeger
+
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 16687
+          initialDelaySeconds: 10
+          periodSeconds: 10
+
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 16687
+          initialDelaySeconds: 5
+          periodSeconds: 5
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+
+      volumes:
+      - name: ui-config
+        configMap:
+          name: jaeger-ui-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jaeger-query
+  namespace: monitoring
+  labels:
+    app: jaeger
+    component: query
+spec:
+  type: NodePort
+  ports:
+  - port: 16686
+    targetPort: 16686
+    nodePort: 30002
+    name: ui
+  - port: 16687
+    targetPort: 16687
+    name: admin
+  selector:
+    app: jaeger
+    component: query

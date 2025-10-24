@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- namespaces.yaml
+- storage/monitoring-pvcs.yaml
+- prometheus/prometheus-rbac.yaml
+- prometheus/prometheus-config.yaml
+- prometheus/prometheus-deployment.yaml
+- grafana/grafana-config.yaml
+- grafana/grafana-deployment.yaml
+- jaeger/jaeger-config.yaml
+- jaeger/jaeger-production.yaml
+- victoriametrics/victoriametrics.yaml
+- victoriametrics/victoriatraces.yaml
+- otel-collector/otel-collector-config.yaml
+- otel-collector/otel-collector-deployment.yaml
+- node-exporter/node-exporter.yaml
+- services/service-a.yaml
+- services/service-b.yaml
+- services/service-c.yaml
+- postgres/postgres.yaml
+- postgres/postgres-exporter.yaml

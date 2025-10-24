@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: monitoring
+data:
+  otel-collector-config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+
+    connectors:
+      spanmetrics:
+        histogram:
+          explicit:
+            buckets: [2ms, 8ms, 50ms, 100ms, 200ms, 500ms, 1s, 2s, 5s, 10s]
+        dimensions:
+          - name: http.method
+          - name: http.status_code
+        dimensions_cache_size: 1000
+        aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
+        metrics_flush_interval: 30s
+
+      servicegraph:
+        latency_histogram_buckets: [2ms, 8ms, 50ms, 100ms, 200ms, 500ms, 1s, 2s, 5s, 10s]
+        dimensions:
+          - http.method
+          - http.status_code
+        store:
+          ttl: 2s
+          max_items: 1000
+
+    exporters:
+      otlp/jaeger:
+        endpoint: jaeger-collector.monitoring.svc.cluster.local:4317
+        tls:
+          insecure: true
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+      prometheusremotewrite:
+        endpoint: http://victoriametrics.monitoring.svc.cluster.local:8428/api/v1/write
+      logging:
+        loglevel: debug
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlp/jaeger, spanmetrics, servicegraph, logging]
+        metrics:
+          receivers: [otlp, spanmetrics, servicegraph]
+          processors: [memory_limiter, batch]
+          exporters: [prometheus, prometheusremotewrite, logging]

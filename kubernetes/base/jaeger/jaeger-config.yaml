@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-sampling-config
+  namespace: monitoring
+  labels:
+    app: jaeger
+data:
+  sampling.json: |
+    {
+      "service_strategies": [
+        {
+          "service": "gateway",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "user-service",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "product-service",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "order-service",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "payment-service",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "inventory-service",
+          "type": "probabilistic",
+          "param": 1.0
+        },
+        {
+          "service": "notification-service",
+          "type": "probabilistic",
+          "param": 1.0
+        }
+      ],
+      "default_strategy": {
+        "type": "probabilistic",
+        "param": 0.1
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jaeger-ui-config
+  namespace: monitoring
+  labels:
+    app: jaeger
+data:
+  ui-config.json: |
+    {
+      "monitor": {
+        "menuEnabled": true
+      },
+      "dependencies": {
+        "menuEnabled": true
+      },
+      "archiveEnabled": true,
+      "tracking": {
+        "gaID": null,
+        "trackErrors": true
+      },
+      "menu": [
+        {
+          "label": "Grafana",
+          "items": [
+            {
+              "label": "Service Performance",
+              "url": "http://localhost:3000/d/jaeger-spm"
+            },
+            {
+              "label": "Prometheus",
+              "url": "http://localhost:9090"
+            }
+          ]
+        },
+        {
+          "label": "About Jaeger",
+          "items": [
+            {
+              "label": "Documentation",
+              "url": "https://www.jaegertracing.io/docs/"
+            },
+            {
+              "label": "GitHub",
+              "url": "https://github.com/jaegertracing/jaeger"
+            }
+          ]
+        }
+      ],
+      "linkPatterns": [
+        {
+          "type": "logs",
+          "key": "traceId",
+          "url": "http://localhost:3000/explore?orgId=1&left=%5B%22now-1h%22,%22now%22,%22Loki%22,%7B%22expr%22:%22%7Btrace_id%3D%5C%22#{traceId}%5C%22%7D%22%7D%5D",
+          "text": "View Logs for Trace"
+        }
+      ]
+    }
