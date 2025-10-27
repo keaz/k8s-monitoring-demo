@@ -135,11 +135,10 @@ metadata:
   labels:
     app: jaeger
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 16686
     targetPort: 16686
-    nodePort: 30002
     name: ui
   - port: 16687
     targetPort: 14269

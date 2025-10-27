@@ -57,11 +57,10 @@ metadata:
   labels:
     app: prometheus
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 9090
     targetPort: 9090
-    nodePort: 30000
     name: web
   selector:
     app: prometheus

@@ -50,11 +50,10 @@ metadata:
   labels:
     app: victoriatraces
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 8428
     targetPort: 8428
-    nodePort: 30004
     name: http
   - port: 4317
     targetPort: 4317

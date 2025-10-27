@@ -11,28 +11,28 @@ export PATH="$HOME/.local/bin:$PATH"
 echo "Discovering Java services..."
 JAVA_SERVICES=()
 for dir in services/java/*/; do
-    [ -d "$dir" ] || continue
-    if [ -f "${dir%/}/pom.xml" ]; then
-        JAVA_SERVICES+=("$(basename "$dir")")
-    fi
+  [ -d "$dir" ] || continue
+  if [ -f "${dir%/}/pom.xml" ]; then
+    JAVA_SERVICES+=("$(basename "$dir")")
+  fi
 done
 
 IFS=$'\n' JAVA_SERVICES=($(printf "%s\n" "${JAVA_SERVICES[@]}" | sort))
 unset IFS
 
 if [ ${#JAVA_SERVICES[@]} -eq 0 ]; then
-    echo "ERROR: No Java services found under services/java"
-    exit 1
+  echo "ERROR: No Java services found under services/java"
+  exit 1
 fi
 
 echo "Building Java services: ${JAVA_SERVICES[*]}"
 
 for service in "${JAVA_SERVICES[@]}"; do
-    echo "Building $service..."
-    pushd "services/java/$service" >/dev/null
-    docker build -t "$service:latest" .
-    kind load docker-image "$service:latest" --name monitoring-demo
-    popd >/dev/null
+  echo "Building $service..."
+  pushd "services/java/$service" >/dev/null
+  docker build -t "$service:latest" .
+  kind load docker-image "$service:latest" --name monitoring-demo
+  popd >/dev/null
 done
 
 # Deploy using kustomize
@@ -44,7 +44,7 @@ kubectl wait --for=condition=ready pod -l app=prometheus -n monitoring --timeout
 kubectl wait --for=condition=ready pod -l app=grafana -n monitoring --timeout=300s
 kubectl wait --for=condition=ready pod -l app=jaeger -n monitoring --timeout=300s
 for service in "${JAVA_SERVICES[@]}"; do
-    kubectl wait --for=condition=available deployment/"$service" -n services --timeout=300s
+  kubectl wait --for=condition=available deployment/"$service" -n services --timeout=300s
 done
 
 echo ""

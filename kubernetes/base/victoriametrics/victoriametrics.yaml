@@ -48,11 +48,10 @@ metadata:
   labels:
     app: victoriametrics
 spec:
-  type: NodePort
+  type: LoadBalancer
   ports:
   - port: 8428
     targetPort: 8428
-    nodePort: 30003
     name: http
   selector:
     app: victoriametrics
