@@ -1,0 +1,232 @@
+# This file contains examples of various Istio traffic management features
+# Apply specific sections as needed for demonstrations
+
+---
+# Example 1: Canary Deployment - Split traffic 90/10 between versions
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-a-canary
+  namespace: services
+spec:
+  hosts:
+  - service-a
+  http:
+  - match:
+    - headers:
+        x-canary:
+          exact: "true"
+    route:
+    - destination:
+        host: service-a
+        subset: v2
+  - route:
+    - destination:
+        host: service-a
+        subset: v1
+      weight: 90
+    - destination:
+        host: service-a
+        subset: v2
+      weight: 10
+
+---
+# Example 2: A/B Testing - Route based on user type
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-a-ab-testing
+  namespace: services
+spec:
+  hosts:
+  - service-a
+  http:
+  - match:
+    - headers:
+        user-type:
+          exact: "premium"
+    route:
+    - destination:
+        host: service-a
+        subset: v2
+  - route:
+    - destination:
+        host: service-a
+        subset: v1
+
+---
+# Example 3: Fault Injection - Delay
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-b-fault-delay
+  namespace: services
+spec:
+  hosts:
+  - service-b
+  http:
+  - fault:
+      delay:
+        percentage:
+          value: 20.0
+        fixedDelay: 5s
+    route:
+    - destination:
+        host: service-b
+        subset: v1
+
+---
+# Example 4: Fault Injection - Abort/Error
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-c-fault-abort
+  namespace: services
+spec:
+  hosts:
+  - service-c
+  http:
+  - fault:
+      abort:
+        percentage:
+          value: 10.0
+        httpStatus: 503
+    route:
+    - destination:
+        host: service-c
+        subset: v1
+
+---
+# Example 5: Request Timeout
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-b-timeout
+  namespace: services
+spec:
+  hosts:
+  - service-b
+  http:
+  - timeout: 3s
+    route:
+    - destination:
+        host: service-b
+        subset: v1
+
+---
+# Example 6: Retry Policy
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-c-retry
+  namespace: services
+spec:
+  hosts:
+  - service-c
+  http:
+  - retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: 5xx,reset,connect-failure,refused-stream
+    route:
+    - destination:
+        host: service-c
+        subset: v1
+
+---
+# Example 7: Circuit Breaking (applied via DestinationRule)
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: service-a-circuit-breaker
+  namespace: services
+spec:
+  host: service-a
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 10
+      http:
+        http1MaxPendingRequests: 5
+        http2MaxRequests: 10
+        maxRequestsPerConnection: 1
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 100
+      minHealthPercent: 0
+
+---
+# Example 8: Request Mirroring (Traffic Shadowing)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-a-mirror
+  namespace: services
+spec:
+  hosts:
+  - service-a
+  http:
+  - route:
+    - destination:
+        host: service-a
+        subset: v1
+      weight: 100
+    mirror:
+      host: service-a
+      subset: v2
+    mirrorPercentage:
+      value: 50.0
+
+---
+# Example 9: Header-based Routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-b-header-routing
+  namespace: services
+spec:
+  hosts:
+  - service-b
+  http:
+  - match:
+    - headers:
+        x-user-id:
+          regex: "^user-[0-9]+$"
+    route:
+    - destination:
+        host: service-b
+        subset: v2
+  - route:
+    - destination:
+        host: service-b
+        subset: v1
+
+---
+# Example 10: URI-based Routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: service-a-uri-routing
+  namespace: services
+spec:
+  hosts:
+  - service-a
+  http:
+  - match:
+    - uri:
+        prefix: "/api/v2"
+    rewrite:
+      uri: "/api"
+    route:
+    - destination:
+        host: service-a
+        subset: v2
+  - match:
+    - uri:
+        prefix: "/api"
+    route:
+    - destination:
+        host: service-a
+        subset: v1

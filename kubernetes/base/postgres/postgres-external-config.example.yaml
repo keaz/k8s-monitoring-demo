@@ -1,0 +1,23 @@
+# Example configuration for connecting to external PostgreSQL database
+# Copy this file to postgres-external-config.yaml and update with your values
+#
+# Usage:
+#   1. Copy: cp postgres-external-config.example.yaml postgres-external-config.yaml
+#   2. Edit postgres-external-config.yaml with your database details
+#   3. Apply: kubectl apply -f postgres-external-config.yaml
+#
+# Note: If this ConfigMap doesn't exist, the exporter will use the in-cluster
+# PostgreSQL database (postgres.services.svc.cluster.local)
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-external-config
+  namespace: monitoring
+  labels:
+    app: postgres-exporter
+data:
+  POSTGRES_HOST: "172.15.100.17"
+  POSTGRES_PORT: "5000"
+  POSTGRES_PASSWORD: "postgres"
+  POSTGRES_SSLMODE: "require"

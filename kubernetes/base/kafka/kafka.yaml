@@ -1,0 +1,244 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: services
+  labels:
+    app: zookeeper
+spec:
+  ports:
+  - port: 2181
+    name: client
+    targetPort: 2181
+  - port: 2888
+    name: follower
+    targetPort: 2888
+  - port: 3888
+    name: election
+    targetPort: 3888
+  selector:
+    app: zookeeperpg_static
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: services
+spec:
+  serviceName: zookeeper
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: confluentinc/cp-zookeeper:7.5.0
+        ports:
+        - containerPort: 2181
+          name: client
+        - containerPort: 2888
+          name: follower
+        - containerPort: 3888
+          name: election
+        env:
+        - name: ZOOKEEPER_CLIENT_PORT
+          value: "2181"
+        - name: ZOOKEEPER_TICK_TIME
+          value: "2000"
+        - name: ZOOKEEPER_SERVER_ID
+          value: "1"
+        volumeMounts:
+        - name: zookeeper-data
+          mountPath: /var/lib/zookeeper/data
+        - name: zookeeper-logs
+          mountPath: /var/lib/zookeeper/log
+  volumeClaimTemplates:
+  - metadata:
+      name: zookeeper-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+  - metadata:
+      name: zookeeper-logs
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: services
+  labels:
+    app: kafka
+spec:
+  ports:
+  - port: 9092
+    name: broker
+    targetPort: 9092
+  - port: 9999
+    name: jmx
+    targetPort: 9999
+  selector:
+    app: kafka
+  clusterIP: None
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: services
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: confluentinc/cp-kafka:7.5.0
+        ports:
+        - containerPort: 9092
+          name: broker
+        - containerPort: 9999
+          name: jmx
+        env:
+        - name: KAFKA_BROKER_ID
+          value: "1"
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: "zookeeper:2181"
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: "PLAINTEXT://kafka-0.kafka.services.svc.cluster.local:9092"
+        - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+          value: "PLAINTEXT:PLAINTEXT"
+        - name: KAFKA_INTER_BROKER_LISTENER_NAME
+          value: "PLAINTEXT"
+        - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+          value: "1"
+        - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+          value: "1"
+        - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+          value: "true"
+        - name: KAFKA_JMX_PORT
+          value: "9999"
+        - name: KAFKA_JMX_HOSTNAME
+          value: "localhost"
+        - name: KAFKA_JMX_OPTS
+          value: "-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=localhost -Dcom.sun.management.jmxremote.rmi.port=9999"
+        volumeMounts:
+        - name: kafka-data
+          mountPath: /var/lib/kafka/data
+      - name: jmx-exporter
+        image: solsson/kafka-prometheus-jmx-exporter@sha256:6f82e2b0464f50da8104acd7363fb9b995001ddff77d248379f8788e78946143
+        ports:
+        - containerPort: 5556
+          name: metrics
+        volumeMounts:
+        - name: jmx-config
+          mountPath: /etc/jmx-exporter
+      volumes:
+      - name: jmx-config
+        configMap:
+          name: kafka-jmx-config
+  volumeClaimTemplates:
+  - metadata:
+      name: kafka-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-jmx-config
+  namespace: services
+data:
+  config.yaml: |
+    hostPort: localhost:9999
+    lowercaseOutputName: true
+    lowercaseOutputLabelNames: true
+    ssl: false
+    rules:
+    # Kafka Server metrics
+    - pattern: kafka.server<type=(.+), name=(.+)><>Value
+      name: kafka_server_$1_$2
+    - pattern: kafka.server<type=(.+), name=(.+), clientId=(.+)><>Value
+      name: kafka_server_$1_$2
+      labels:
+        clientId: "$3"
+    # Network Request Metrics
+    - pattern: kafka.network<type=RequestMetrics, name=(.+), request=(.+)><>(\w+)
+      name: kafka_network_request_metrics_$1
+      labels:
+        request: "$2"
+        measurement: "$3"
+    # Controller metrics
+    - pattern: kafka.controller<type=(.+), name=(.+)><>Value
+      name: kafka_controller_$1_$2
+    # Log metrics
+    - pattern: kafka.log<type=(.+), name=(.+)><>Value
+      name: kafka_log_$1_$2
+    # Topic metrics
+    - pattern: kafka.server<type=(.+), name=(.+), topic=(.+)><>Value
+      name: kafka_server_$1_$2
+      labels:
+        topic: "$3"
+    # Partition metrics
+    - pattern: kafka.server<type=(.+), name=(.+), topic=(.+), partition=(.+)><>Value
+      name: kafka_server_$1_$2
+      labels:
+        topic: "$3"
+        partition: "$4"
+    # Consumer Group metrics
+    - pattern: kafka.consumer<type=(.+), client-id=(.+), topic=(.+), partition=(.+)><>(.+)
+      name: kafka_consumer_$1_$5
+      labels:
+        client_id: "$2"
+        topic: "$3"
+        partition: "$4"
+    # Producer metrics
+    - pattern: kafka.producer<type=(.+), client-id=(.+), topic=(.+)><>(.+)
+      name: kafka_producer_$1_$4
+      labels:
+        client_id: "$2"
+        topic: "$3"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-jmx-metrics
+  namespace: services
+  labels:
+    app: kafka
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "5556"
+    prometheus.io/path: "/metrics"
+spec:
+  ports:
+  - port: 5556
+    name: metrics
+    targetPort: 5556
+  selector:
+    app: kafka
+  type: ClusterIP

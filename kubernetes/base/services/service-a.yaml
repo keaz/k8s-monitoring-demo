@@ -14,10 +14,12 @@ spec:
     metadata:
       labels:
         app: service-a
+        version: v1
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9464"
         prometheus.io/path: "/metrics"
+        sidecar.istio.io/inject: "true"
     spec:
       containers:
       - name: service-a

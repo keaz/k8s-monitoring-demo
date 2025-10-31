@@ -1,0 +1,60 @@
+# Additional Prometheus scrape configurations for Istio
+# Add these to your Prometheus ConfigMap
+
+# NOTE: This is a reference configuration
+# You need to add these scrape configs to kubernetes/base/prometheus/prometheus-config.yaml
+
+# Scrape configuration for Istio control plane (istiod)
+# - job_name: 'istio-mesh'
+#   kubernetes_sd_configs:
+#   - role: endpoints
+#     namespaces:
+#       names:
+#       - istio-system
+#   relabel_configs:
+#   - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+#     action: keep
+#     regex: istiod;http-monitoring
+#   - source_labels: [__meta_kubernetes_service_label_app]
+#     action: replace
+#     target_label: app
+
+# Scrape configuration for Envoy sidecars
+# - job_name: 'envoy-stats'
+#   metrics_path: /stats/prometheus
+#   kubernetes_sd_configs:
+#   - role: pod
+#   relabel_configs:
+#   - source_labels: [__meta_kubernetes_pod_container_name]
+#     action: keep
+#     regex: istio-proxy
+#   - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+#     action: replace
+#     regex: ([^:]+)(?::\d+)?;(\d+)
+#     replacement: ${1}:15090
+#     target_label: __address__
+#   - action: labelmap
+#     regex: __meta_kubernetes_pod_label_(.+)
+#   - source_labels: [__meta_kubernetes_namespace]
+#     action: replace
+#     target_label: namespace
+#   - source_labels: [__meta_kubernetes_pod_name]
+#     action: replace
+#     target_label: pod_name
+
+# Instructions:
+# 1. The Istio demo profile includes its own Prometheus that already scrapes Istio metrics
+# 2. Your existing Prometheus in the monitoring namespace will also pick up Istio metrics
+#    from the Envoy sidecars via the existing pod annotation-based scraping
+# 3. Envoy proxies expose metrics on port 15090 at /stats/prometheus
+# 4. These metrics are automatically available because your services have the
+#    prometheus.io/scrape annotation
+
+# To verify Istio metrics are being scraped:
+# 1. Port-forward to your Prometheus:
+#    kubectl port-forward -n monitoring svc/prometheus 9090:9090
+# 2. Check for Istio metrics:
+#    - istio_requests_total
+#    - istio_request_duration_milliseconds
+#    - envoy_cluster_upstream_cx_active
+# 3. Check targets at http://localhost:9090/targets

@@ -1,0 +1,201 @@
+# Istio Security Policies - mTLS, Authorization, and Authentication
+
+---
+# Enable strict mTLS for the entire mesh
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# mTLS for services namespace
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: services-mtls
+  namespace: services
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# Example: Permissive mTLS (for gradual migration)
+# Uncomment to use instead of STRICT mode
+# apiVersion: security.istio.io/v1
+# kind: PeerAuthentication
+# metadata:
+#   name: default
+#   namespace: istio-system
+# spec:
+#   mtls:
+#     mode: PERMISSIVE
+
+---
+# Authorization Policy: Default deny all
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: services
+spec:
+  {}
+
+---
+# Authorization Policy: Allow service-a to be accessed from gateway
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: service-a-ingress
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        namespaces: ["istio-system"]
+    - source:
+        principals: ["cluster.local/ns/services/sa/service-a"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/api/*"]
+
+---
+# Authorization Policy: Allow service-a to call service-b
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: service-b-from-service-a
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-b
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/services/sa/service-a"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+
+---
+# Authorization Policy: Allow service-b to call service-c
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: service-c-from-service-b
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-c
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/services/sa/service-b"]
+    to:
+    - operation:
+        methods: ["GET", "POST"]
+
+---
+# Authorization Policy: Allow Prometheus scraping
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: services
+spec:
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        namespaces: ["monitoring", "istio-system"]
+    to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/metrics", "/stats/prometheus"]
+
+---
+# Authorization Policy: Example JWT validation (commented out)
+# Requires setting up a JWT issuer
+# apiVersion: security.istio.io/v1
+# kind: RequestAuthentication
+# metadata:
+#   name: jwt-auth
+#   namespace: services
+# spec:
+#   selector:
+#     matchLabels:
+#       app: service-a
+#   jwtRules:
+#   - issuer: "https://your-issuer.example.com"
+#     jwksUri: "https://your-issuer.example.com/.well-known/jwks.json"
+#     audiences:
+#     - "your-service-audience"
+
+---
+# Authorization Policy: Deny specific paths
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-admin-paths
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  action: DENY
+  rules:
+  - to:
+    - operation:
+        paths: ["/admin/*", "/internal/*"]
+
+---
+# Authorization Policy: IP-based access control example
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: ip-allowlist
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        ipBlocks: ["10.0.0.0/8", "192.168.0.0/16"]
+    to:
+    - operation:
+        paths: ["/api/health"]
+
+---
+# Authorization Policy: Method-based restrictions
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: read-only-external
+  namespace: services
+spec:
+  selector:
+    matchLabels:
+      app: service-a
+  action: ALLOW
+  rules:
+  - from:
+    - source:
+        notNamespaces: ["services"]
+    to:
+    - operation:
+        methods: ["GET", "HEAD", "OPTIONS"]

@@ -3,6 +3,7 @@ package com.example.otel.servicea;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,6 +23,9 @@ public class FrontendController {
     @Autowired
     private RestTemplate restTemplate;
 
+    @Autowired
+    private KafkaTemplate<String, String> kafkaTemplate;
+
     @Value("${service.b.url:http://service-b:8081}")
     private String serviceBUrl;
 
@@ -33,6 +37,33 @@ public class FrontendController {
         response.put("service", "service-a");
         response.put("message", "Hello from Service A");
         response.put("timestamp", System.currentTimeMillis());
+
+        return response;
+    }
+
+    @GetMapping("/kafka/send/{message}")
+    public Map<String, Object> sendKafkaMessage(@PathVariable String message) {
+        log.info("Service A: Sending message to Kafka: {}", message);
+
+        String messageId = UUID.randomUUID().toString();
+        long timestamp = System.currentTimeMillis();
+
+        // Create message payload with metadata
+        String payload = String.format("{\"messageId\":\"%s\",\"message\":\"%s\",\"timestamp\":%d,\"source\":\"service-a\"}",
+                messageId, message, timestamp);
+
+        // Send to Kafka topic
+        kafkaTemplate.send("service-events", messageId, payload);
+
+        log.info("Service A: Message sent to Kafka with ID: {}", messageId);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("service", "service-a");
+        response.put("messageId", messageId);
+        response.put("message", message);
+        response.put("topic", "service-events");
+        response.put("status", "sent");
+        response.put("timestamp", timestamp);
 
         return response;
     }

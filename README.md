@@ -402,12 +402,54 @@ kind delete cluster --name monitoring-demo
 kubectl delete -k kubernetes/overlays/dev/
 ```
 
+## Istio Service Mesh Integration
+
+This demo now includes **Istio service mesh** support for advanced traffic management, security, and observability!
+
+### Quick Start with Istio
+
+**Option 1: Deploy everything including Istio**
+```bash
+./scripts/deploy-with-istio.sh
+```
+
+**Option 2: Add Istio to existing deployment**
+```bash
+./scripts/install-istio.sh
+kubectl apply -f kubernetes/base/istio/istio-gateway.yaml
+kubectl apply -f kubernetes/base/istio/destination-rules.yaml
+kubectl rollout restart deployment -n services
+```
+
+### What Istio Adds
+
+- **Service Mesh Visualization**: Kiali dashboard showing real-time service topology
+- **Traffic Management**: Canary deployments, A/B testing, fault injection
+- **Security**: Automatic mTLS between services, authorization policies
+- **Enhanced Observability**: Service-level metrics, distributed tracing, access logs
+- **Resilience**: Circuit breakers, retries, timeouts
+
+### Access Kiali Dashboard
+
+```bash
+kubectl port-forward svc/kiali -n istio-system 20001:20001
+```
+
+Open: http://localhost:20001
+
+### Istio Documentation
+
+- **[Quick Start Guide](ISTIO_QUICK_START.md)** - Get started in 5 minutes
+- **[Complete Setup Guide](ISTIO_SETUP.md)** - Detailed installation and configuration
+- **[Traffic Management](ISTIO_TRAFFIC_MANAGEMENT.md)** - Canary, A/B testing, fault injection examples
+- **[Observability Guide](ISTIO_OBSERVABILITY.md)** - Kiali, metrics, and distributed tracing
+
 ## Next Steps
 
-1. **Add Persistent Storage**: Configure PVCs for Prometheus and Grafana
-2. **Alerting**: Set up Alertmanager with Prometheus
-3. **Log Aggregation**: Add Loki or ELK stack
-4. **Service Mesh**: Integrate with Istio or Linkerd for advanced observability
+1. **Service Mesh**: Try Istio features with the guides above
+2. **Add Persistent Storage**: Configure PVCs for Prometheus and Grafana
+3. **Alerting**: Set up Alertmanager with Prometheus
+4. **Log Aggregation**: Add Loki or ELK stack
 5. **Custom Dashboards**: Create application-specific Grafana dashboards
 6. **SLOs**: Define and monitor Service Level Objectives
 

@@ -89,6 +89,13 @@ else
     echo "Namespace 'services' does not exist, skipping..."
 fi
 
+# Clean up istio-system namespace
+if kubectl get namespace istio-system &>/dev/null; then
+    cleanup_namespace "istio-system"
+else
+    echo "Namespace 'istio-system' does not exist, skipping..."
+fi
+
 # Delete cluster-wide resources created by the demo
 echo "=== Cleaning cluster-wide resources ==="
 
@@ -102,11 +109,30 @@ kubectl delete clusterrole kiali --ignore-not-found=true
 kubectl delete clusterrole kiali-viewer --ignore-not-found=true
 kubectl delete clusterrolebinding kiali --ignore-not-found=true
 
+# Delete Istio-related cluster resources
+echo "  Deleting Istio-related ClusterRoles and ClusterRoleBindings..."
+kubectl delete clusterrole istiod-istio-system --ignore-not-found=true
+kubectl delete clusterrole istiod-gateway-controller-istio-system --ignore-not-found=true
+kubectl delete clusterrolebinding istiod-istio-system --ignore-not-found=true
+kubectl delete clusterrolebinding istiod-gateway-controller-istio-system --ignore-not-found=true
+
+echo "  Deleting Istio CRDs (Custom Resource Definitions)..."
+kubectl get crd -o name | grep 'istio.io' | xargs -r kubectl delete --ignore-not-found=true
+
+echo "  Deleting Istio ValidatingWebhookConfigurations..."
+kubectl delete validatingwebhookconfiguration istiod-default-validator --ignore-not-found=true
+kubectl delete validatingwebhookconfiguration istiod-istio-system --ignore-not-found=true
+
+echo "  Deleting Istio MutatingWebhookConfigurations..."
+kubectl delete mutatingwebhookconfiguration istio-sidecar-injector --ignore-not-found=true
+kubectl delete mutatingwebhookconfiguration istio-sidecar-injector-istio-system --ignore-not-found=true
+
 # Wait for pods to terminate
 echo ""
 echo "Waiting for pods to terminate..."
 kubectl wait --for=delete pod --all -n monitoring --timeout=120s 2>/dev/null || true
 kubectl wait --for=delete pod --all -n services --timeout=120s 2>/dev/null || true
+kubectl wait --for=delete pod --all -n istio-system --timeout=120s 2>/dev/null || true
 
 echo ""
 echo "=== Cleanup Summary ==="
@@ -122,9 +148,16 @@ kubectl get pvc -n services 2>/dev/null || echo "  No PVCs in services namespace
 echo ""
 echo "=== Cleanup Complete ==="
 echo ""
-echo "All services and deployments have been removed."
+echo "All services, monitoring tools, and Istio components have been removed."
 echo "PVCs and their data have been preserved."
 echo ""
+echo "Cleaned namespaces:"
+echo "  - monitoring (PVCs preserved)"
+echo "  - services"
+echo "  - istio-system"
+echo ""
 echo "To redeploy with preserved data, run:"
-echo "  ./scripts/build-and-deploy.sh"
+echo "  ./scripts/deploy-with-istio.sh"
+echo "  or"
+echo "  ./scripts/build-and-deploy.sh  (without Istio)"
 echo ""

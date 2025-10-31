@@ -1,0 +1,61 @@
+# Istio Telemetry configuration to work with existing Prometheus and monitoring setup
+
+---
+# Telemetry configuration for Istio metrics
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: mesh-default
+  namespace: istio-system
+spec:
+  metrics:
+  - providers:
+    - name: prometheus
+    overrides:
+    - match:
+        metric: ALL_METRICS
+      tagOverrides:
+        request_protocol:
+          value: "istio_request_protocol"
+        response_code:
+          value: "istio_response_code"
+
+---
+# Telemetry for custom metrics in services namespace
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata:
+  name: services-telemetry
+  namespace: services
+spec:
+  tracing:
+  - providers:
+    - name: jaeger
+    randomSamplingPercentage: 100.0
+    customTags:
+      environment:
+        literal:
+          value: "demo"
+      cluster:
+        literal:
+          value: "k8s-monitoring-demo"
+  metrics:
+  - providers:
+    - name: prometheus
+
+---
+# Extension provider for Jaeger integration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-tracing-config
+  namespace: istio-system
+data:
+  mesh: |
+    extensionProviders:
+    - name: jaeger
+      zipkin:
+        service: jaeger-collector.monitoring.svc.cluster.local
+        port: 9411
+    - name: prometheus
+      prometheus: {}

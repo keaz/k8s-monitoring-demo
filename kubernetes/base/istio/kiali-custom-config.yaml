@@ -1,0 +1,48 @@
+# Custom Kiali configuration to integrate with existing Prometheus, Grafana, and Jaeger
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kiali
+  namespace: istio-system
+  labels:
+    app: kiali
+data:
+  config.yaml: |
+    auth:
+      strategy: anonymous
+    deployment:
+      accessible_namespaces:
+      - '**'
+      namespace: istio-system
+    external_services:
+      custom_dashboards:
+        enabled: true
+      prometheus:
+        # Point to our existing Prometheus in monitoring namespace
+        url: "http://prometheus.monitoring.svc.cluster.local:9090"
+      grafana:
+        enabled: true
+        in_cluster_url: "http://grafana.monitoring.svc.cluster.local:3000"
+        url: "http://grafana.monitoring.svc.cluster.local:3000"
+        auth:
+          type: none
+        dashboards:
+        - name: "Istio Service Dashboard"
+          variables:
+            namespace: "var-namespace"
+            service: "var-service"
+        - name: "Istio Workload Dashboard"
+          variables:
+            namespace: "var-namespace"
+            workload: "var-workload"
+      tracing:
+        enabled: true
+        # Point to our existing Jaeger in monitoring namespace
+        in_cluster_url: "http://jaeger-query.monitoring.svc.cluster.local:16686"
+        url: "http://jaeger-query.monitoring.svc.cluster.local:16686"
+        namespace_selector: true
+        use_grpc: false
+    istio_namespace: istio-system
+    server:
+      port: 20001
+      web_root: /kiali

@@ -21,3 +21,11 @@ resources:
 - services/service-c.yaml
 - postgres/postgres.yaml
 - postgres/postgres-exporter.yaml
+- kafka/kafka.yaml
+- kafka/kafka-exporter.yaml
+# Istio Service Mesh resources (apply after Istio installation)
+# Uncomment these after running ./scripts/install-istio.sh
+# - istio/istio-gateway.yaml
+# - istio/destination-rules.yaml
+# - istio/telemetry-integration.yaml
+# - istio/kiali-custom-config.yaml
