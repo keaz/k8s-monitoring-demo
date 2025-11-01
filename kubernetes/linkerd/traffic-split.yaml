@@ -1,0 +1,277 @@
+# Linkerd Traffic Management Examples using TrafficSplit
+# TrafficSplit is part of the Service Mesh Interface (SMI) spec
+# It enables weighted traffic splitting for canary deployments and A/B testing
+
+# Prerequisites:
+# 1. Services must have multiple versions deployed (e.g., service-a-v1, service-a-v2)
+# 2. Each version should have its own Kubernetes Service
+# 3. There should be a root Service that TrafficSplit will split traffic from
+
+---
+# Example 1: Canary Deployment - 90% v1, 10% v2
+# This splits traffic from service-a to 90% v1 and 10% v2
+apiVersion: split.smi-spec.io/v1alpha2
+kind: TrafficSplit
+metadata:
+  name: service-a-canary
+  namespace: services
+spec:
+  # The root service that clients call
+  service: service-a
+  # Traffic split configuration
+  backends:
+  - service: service-a-v1
+    weight: 900   # 90% traffic
+  - service: service-a-v2
+    weight: 100   # 10% traffic
+
+---
+# Example 2: Progressive Canary - 50/50 Split
+# Gradually increase traffic to new version
+apiVersion: split.smi-spec.io/v1alpha2
+kind: TrafficSplit
+metadata:
+  name: service-b-canary-50-50
+  namespace: services
+spec:
+  service: service-b
+  backends:
+  - service: service-b-v1
+    weight: 500   # 50% traffic
+  - service: service-b-v2
+    weight: 500   # 50% traffic
+
+---
+# Example 3: A/B Testing - Three-way Split
+# Test multiple versions simultaneously
+apiVersion: split.smi-spec.io/v1alpha2
+kind: TrafficSplit
+metadata:
+  name: service-c-ab-test
+  namespace: services
+spec:
+  service: service-c
+  backends:
+  - service: service-c-v1
+    weight: 700   # 70% stable
+  - service: service-c-v2
+    weight: 200   # 20% variant A
+  - service: service-c-v3
+    weight: 100   # 10% variant B
+
+---
+# Example 4: Blue-Green Deployment - Full Cutover
+# Switch 100% traffic to new version
+apiVersion: split.smi-spec.io/v1alpha2
+kind: TrafficSplit
+metadata:
+  name: service-a-blue-green
+  namespace: services
+spec:
+  service: service-a
+  backends:
+  - service: service-a-v1
+    weight: 0     # 0% to old version
+  - service: service-a-v2
+    weight: 1000  # 100% to new version
+
+---
+# Supporting Kubernetes Services for Canary Deployment
+# These are example service definitions for multi-version deployments
+
+# Root service - This is what clients call
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+  namespace: services
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: service-a
+    # No version selector - TrafficSplit will handle routing
+
+---
+# Version 1 service
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a-v1
+  namespace: services
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: service-a
+    version: v1
+
+---
+# Version 2 service
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a-v2
+  namespace: services
+spec:
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: service-a
+    version: v2
+
+---
+# Example Deployment for Version 2 (Canary)
+# Use this to deploy a new version alongside v1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a-v2
+  namespace: services
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-a
+      version: v2
+  template:
+    metadata:
+      labels:
+        app: service-a
+        version: v2
+      annotations:
+        # Linkerd sidecar injection
+        linkerd.io/inject: enabled
+    spec:
+      containers:
+      - name: service-a
+        image: service-a:v2  # New version image
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: VERSION
+          value: "v2"
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: OTEL_SERVICE_NAME
+          value: "service-a-v2"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.monitoring.svc.cluster.local:4317"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+# USAGE INSTRUCTIONS
+#
+# Step 1: Deploy both versions
+# kubectl apply -f kubernetes/base/services/service-a.yaml  # v1
+# kubectl apply -f kubernetes/linkerd/traffic-split.yaml     # v2 + services
+#
+# Step 2: Apply initial canary (10% traffic to v2)
+# kubectl apply -f - <<EOF
+# apiVersion: split.smi-spec.io/v1alpha2
+# kind: TrafficSplit
+# metadata:
+#   name: service-a-canary
+#   namespace: services
+# spec:
+#   service: service-a
+#   backends:
+#   - service: service-a-v1
+#     weight: 900
+#   - service: service-a-v2
+#     weight: 100
+# EOF
+#
+# Step 3: Monitor with Linkerd Viz
+# linkerd viz stat trafficsplit -n services
+# linkerd viz routes deploy/service-a-v1 -n services
+# linkerd viz routes deploy/service-a-v2 -n services
+#
+# Step 4: Gradually increase traffic to v2
+# kubectl patch trafficsplit service-a-canary -n services --type=json -p='[
+#   {"op": "replace", "path": "/spec/backends/0/weight", "value": 500},
+#   {"op": "replace", "path": "/spec/backends/1/weight", "value": 500}
+# ]'
+#
+# Step 5: Complete cutover to v2 (100%)
+# kubectl patch trafficsplit service-a-canary -n services --type=json -p='[
+#   {"op": "replace", "path": "/spec/backends/0/weight", "value": 0},
+#   {"op": "replace", "path": "/spec/backends/1/weight", "value": 1000}
+# ]'
+#
+# Step 6: Cleanup old version
+# kubectl delete deployment service-a-v1 -n services
+# kubectl delete service service-a-v1 -n services
+# kubectl delete trafficsplit service-a-canary -n services
+#
+# MONITORING COMMANDS
+# -------------------
+#
+# View traffic split statistics:
+#   linkerd viz stat trafficsplit -n services
+#
+# View per-route metrics:
+#   linkerd viz routes deploy/service-a-v1 -n services
+#   linkerd viz routes deploy/service-a-v2 -n services
+#
+# Live traffic tap by version:
+#   linkerd viz tap deploy/service-a-v1 -n services
+#   linkerd viz tap deploy/service-a-v2 -n services
+#
+# Check golden metrics for each version:
+#   linkerd viz stat deploy/service-a-v1 -n services
+#   linkerd viz stat deploy/service-a-v2 -n services
+#
+# View service topology:
+#   linkerd viz dashboard
+#   # Navigate to the services namespace to see traffic splits visually
+#
+# ROLLBACK PROCEDURE
+# ------------------
+#
+# If v2 has issues, immediately rollback to v1:
+# kubectl patch trafficsplit service-a-canary -n services --type=json -p='[
+#   {"op": "replace", "path": "/spec/backends/0/weight", "value": 1000},
+#   {"op": "replace", "path": "/spec/backends/1/weight", "value": 0}
+# ]'
+#
+# Or delete the TrafficSplit entirely (routes all to root service):
+# kubectl delete trafficsplit service-a-canary -n services
+#
+# BEST PRACTICES
+# --------------
+#
+# 1. Start with small traffic percentage (5-10%)
+# 2. Monitor error rates and latency before increasing
+# 3. Use ServiceProfiles for per-route metrics
+# 4. Set up alerts on error rate thresholds
+# 5. Gradually increase: 10% -> 25% -> 50% -> 100%
+# 6. Keep old version running until fully validated
+# 7. Use Linkerd's automatic retries (configured in ServiceProfiles)
+# 8. Test rollback procedure before production use
+#
+# TRAFFIC SPLIT WEIGHTS
+# ---------------------
+#
+# Weights are integers that sum to the total traffic
+# Common patterns:
+#   - 90/10 canary:  900/100
+#   - 50/50 split:   500/500
+#   - 95/5 test:     950/50
+#   - Blue-green:    0/1000 or 1000/0
+#
+# Weights don't need to sum to 1000, but it's conventional
+# The actual percentage is: (weight / sum_of_all_weights) * 100

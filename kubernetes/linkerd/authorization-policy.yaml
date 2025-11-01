@@ -1,0 +1,402 @@
+# Linkerd Authorization Policies
+# Linkerd's policy framework provides fine-grained authorization for service-to-service communication
+# This enforces zero-trust security using mutual TLS (mTLS) and service identity
+
+# Architecture:
+# 1. Server - Defines which ports on a pod accept connections
+# 2. ServerAuthorization - Defines who can connect to a Server
+# 3. AuthorizationPolicy - Alternative unified policy resource (Linkerd 2.12+)
+
+---
+# Default Policy: Deny All
+# By default, Linkerd allows all authenticated traffic
+# To enable deny-by-default, set the default policy to deny in Linkerd config
+# For this demo, we'll use explicit allow policies
+
+---
+# Server Definition for service-a
+# Declares that service-a accepts HTTP traffic on port 8080
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: service-a-http
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: service-a
+  port: 8080
+  proxyProtocol: HTTP/1
+
+---
+# ServerAuthorization for service-a
+# Only allow service-b and service-c to call service-a
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: service-a-allow-b-and-c
+  namespace: services
+spec:
+  server:
+    name: service-a-http
+  client:
+    # Allow service-b
+    meshTLS:
+      serviceAccounts:
+      - name: default
+        namespace: services
+      identities:
+      - "service-b.services.serviceaccount.identity.linkerd.cluster.local"
+      - "service-c.services.serviceaccount.identity.linkerd.cluster.local"
+
+---
+# Server Definition for service-b
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: service-b-http
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: service-b
+  port: 8081
+  proxyProtocol: HTTP/1
+
+---
+# ServerAuthorization for service-b
+# Allow service-a and service-c to call service-b
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: service-b-allow-a-and-c
+  namespace: services
+spec:
+  server:
+    name: service-b-http
+  client:
+    meshTLS:
+      serviceAccounts:
+      - name: default
+        namespace: services
+      identities:
+      - "service-a.services.serviceaccount.identity.linkerd.cluster.local"
+      - "service-c.services.serviceaccount.identity.linkerd.cluster.local"
+
+---
+# Server Definition for service-c
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: service-c-http
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: service-c
+  port: 8082
+  proxyProtocol: HTTP/1
+
+---
+# ServerAuthorization for service-c
+# Allow service-a and service-b to call service-c
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: service-c-allow-a-and-b
+  namespace: services
+spec:
+  server:
+    name: service-c-http
+  client:
+    meshTLS:
+      serviceAccounts:
+      - name: default
+        namespace: services
+      identities:
+      - "service-a.services.serviceaccount.identity.linkerd.cluster.local"
+      - "service-b.services.serviceaccount.identity.linkerd.cluster.local"
+
+---
+# Server for PostgreSQL
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: postgres-tcp
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  port: 5432
+  proxyProtocol: TCP
+
+---
+# ServerAuthorization for PostgreSQL
+# Allow all services to connect to PostgreSQL
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: postgres-allow-services
+  namespace: services
+spec:
+  server:
+    name: postgres-tcp
+  client:
+    meshTLS:
+      serviceAccounts:
+      - name: default
+        namespace: services
+
+---
+# Server for Kafka
+apiVersion: policy.linkerd.io/v1beta1
+kind: Server
+metadata:
+  name: kafka-tcp
+  namespace: services
+spec:
+  podSelector:
+    matchLabels:
+      app: kafka
+  port: 9092
+  proxyProtocol: TCP
+
+---
+# ServerAuthorization for Kafka
+# Allow all services to connect to Kafka
+apiVersion: policy.linkerd.io/v1beta1
+kind: ServerAuthorization
+metadata:
+  name: kafka-allow-services
+  namespace: services
+spec:
+  server:
+    name: kafka-tcp
+  client:
+    meshTLS:
+      serviceAccounts:
+      - name: default
+        namespace: services
+
+---
+# HTTPRoute for Route-Level Authorization
+# Allow only specific routes on service-a
+apiVersion: policy.linkerd.io/v1beta1
+kind: HTTPRoute
+metadata:
+  name: service-a-routes
+  namespace: services
+spec:
+  parentRefs:
+  - name: service-a-http
+    kind: Server
+  rules:
+  # Allow /api/hello to everyone
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/hello
+  # Allow /api/call-b only from service-b
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/call-b
+  # Allow /api/call-c only from service-c
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/call-c
+  # Actuator endpoints
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /actuator
+
+---
+# Example: AuthorizationPolicy (Alternative Unified Approach)
+# This is a newer, more concise way to define authorization
+apiVersion: policy.linkerd.io/v1alpha1
+kind: AuthorizationPolicy
+metadata:
+  name: service-a-authz
+  namespace: services
+spec:
+  targetRef:
+    group: ""
+    kind: ServiceAccount
+    name: default
+  requiredAuthenticationRefs:
+  - name: service-a-mtls
+    kind: MeshTLSAuthentication
+
+---
+# MeshTLS Authentication for service-a
+apiVersion: policy.linkerd.io/v1alpha1
+kind: MeshTLSAuthentication
+metadata:
+  name: service-a-mtls
+  namespace: services
+spec:
+  identities:
+  - "service-b.services.serviceaccount.identity.linkerd.cluster.local"
+  - "service-c.services.serviceaccount.identity.linkerd.cluster.local"
+
+---
+# Network Authentication - Allow from specific networks
+apiVersion: policy.linkerd.io/v1alpha1
+kind: NetworkAuthentication
+metadata:
+  name: allow-local-network
+  namespace: services
+spec:
+  networks:
+  - cidr: 10.0.0.0/8      # Internal cluster network
+  - cidr: 172.16.0.0/12   # Internal cluster network
+  - cidr: 192.168.0.0/16  # Internal cluster network
+
+---
+# USAGE INSTRUCTIONS
+#
+# Enable Policy Enforcement
+# -------------------------
+# By default, Linkerd allows all authenticated traffic
+# To enable deny-by-default policy mode:
+#
+# Option 1: Cluster-wide (during installation)
+# linkerd install --set policyController.defaultAllowPolicy=cluster-authenticated
+#
+# Option 2: Per-namespace
+# kubectl annotate namespace services config.linkerd.io/default-inbound-policy=deny
+#
+# Apply Authorization Policies
+# ----------------------------
+# kubectl apply -f kubernetes/linkerd/authorization-policy.yaml
+#
+# Verify Policies
+# ---------------
+# # Check all policies in services namespace
+# kubectl get server,serverauthorization,httproute,authorizationpolicy -n services
+#
+# # Describe a specific policy
+# kubectl describe server service-a-http -n services
+# kubectl describe serverauthorization service-a-allow-b-and-c -n services
+#
+# Test Authorization
+# ------------------
+# # Should succeed: service-a calling service-b
+# kubectl exec -n services deploy/service-a -- curl -s http://service-b:8081/api/hello
+#
+# # Should succeed: service-b calling service-c
+# kubectl exec -n services deploy/service-b -- curl -s http://service-c:8082/api/hello
+#
+# # Should fail if strict policy: unauthorized service calling service-a
+# kubectl run test-pod -n services --image=curlimages/curl --rm -it -- curl http://service-a:8080/api/hello
+#
+# Monitor Policy Decisions
+# -------------------------
+# # View authorization metrics
+# linkerd viz stat authorization -n services
+#
+# # Check policy decisions in logs
+# kubectl logs -n linkerd -l linkerd.io/control-plane-component=destination -f
+#
+# # Live tap with authorization context
+# linkerd viz tap deploy/service-a -n services --to deploy/service-b
+#
+# Debug Policy Issues
+# -------------------
+# # Check if Server resources are applied
+# kubectl get server -n services
+#
+# # Verify service identity
+# linkerd viz edges deployment -n services
+#
+# # Check mTLS status
+# linkerd viz stat deploy -n services -o json | jq '.[] | {name: .name, secured: .tls}'
+#
+# # View policy controller logs
+# kubectl logs -n linkerd -l linkerd.io/control-plane-component=destination
+#
+# Route-Level Authorization Example
+# ----------------------------------
+# To allow only specific HTTP methods/paths:
+#
+# apiVersion: policy.linkerd.io/v1beta1
+# kind: HTTPRoute
+# metadata:
+#   name: service-a-get-only
+#   namespace: services
+# spec:
+#   parentRefs:
+#   - name: service-a-http
+#     kind: Server
+#   rules:
+#   - matches:
+#     - method: GET
+#       path:
+#         type: PathPrefix
+#         value: /api/
+#
+# Service Account Based Authorization
+# ------------------------------------
+# Create dedicated service accounts for better isolation:
+#
+# kubectl create serviceaccount service-a-sa -n services
+# kubectl create serviceaccount service-b-sa -n services
+#
+# Update deployments to use specific service accounts:
+# spec:
+#   template:
+#     spec:
+#       serviceAccountName: service-a-sa
+#
+# Update ServerAuthorization to reference specific service accounts
+#
+# SECURITY BEST PRACTICES
+# ------------------------
+#
+# 1. Use deny-by-default policy mode in production
+# 2. Create dedicated service accounts per service
+# 3. Use route-level authorization for sensitive endpoints
+# 4. Regularly audit authorization policies
+# 5. Monitor authorization metrics for denied requests
+# 6. Use mTLS identities instead of IP-based rules
+# 7. Test policies in staging before production
+# 8. Document allowed communication paths
+# 9. Use least-privilege principle
+# 10. Rotate certificates regularly (Linkerd does this automatically)
+#
+# COMMON PATTERNS
+# ---------------
+#
+# Pattern 1: Frontend -> Backend
+# - Frontend service account can only call backend APIs
+# - Backend cannot call frontend
+#
+# Pattern 2: API Gateway
+# - Only gateway service account can receive external traffic
+# - Internal services deny direct external access
+#
+# Pattern 3: Database Access
+# - Only specific services can connect to database
+# - Read-only vs read-write service accounts
+#
+# Pattern 4: Cross-Namespace
+# - Allow monitoring namespace to scrape metrics
+# - Deny other cross-namespace communication
+#
+# TROUBLESHOOTING
+# ---------------
+#
+# Q: All requests are denied
+# A: Check if default policy is deny and you've applied Server + ServerAuthorization
+#
+# Q: Policy not taking effect
+# A: Ensure pods have Linkerd sidecars injected and are part of the mesh
+#
+# Q: mTLS identity not found
+# A: Verify service account exists and pod is using it
+#
+# Q: Route-level policy not working
+# A: Ensure HTTPRoute references the correct Server resource

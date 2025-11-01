@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: kiali
-  namespace: monitoring
+  namespace: istio-system
   labels:
     app: kiali
 data:
@@ -16,9 +16,14 @@ data:
       web_fqdn: ""
       web_schema: ""
 
-    # Authentication strategy (anonymous for demo)
+    # Authentication strategy (token-based for editing)
     auth:
-      strategy: anonymous
+      strategy: token
+
+    # Login token configuration
+    login_token:
+      signing_key: "kiali-secret-key-change-me-12345"
+      expiration_seconds: 86400
 
     # Deployment configuration
     deployment:
@@ -27,10 +32,10 @@ data:
       cluster_wide_access: true
       view_only_mode: false
 
-    # Kubernetes-only mode (no service mesh)
+    # Enable Istio service mesh features
     kiali_feature_flags:
-      istio_injection_action: false
-      istio_upgrade_action: false
+      istio_injection_action: true
+      istio_upgrade_action: true
 
     # External services configuration
     external_services:
@@ -57,22 +62,26 @@ data:
         auth:
           type: "none"
 
-      # Istio configuration (completely disabled)
+      # Istio configuration (enabled for editing)
       istio:
-        root_namespace: ""
+        root_namespace: "istio-system"
         component_status:
-          enabled: false
-          components: []
+          enabled: true
+          components:
+          - app_label: "istiod"
+            is_core: true
+          - app_label: "istio-ingressgateway"
+            is_core: true
         config_map_name: "istio"
         envoy_admin_local_port: 15000
         istiod_deployment_name: "istiod"
         istiod_pod_monitoring_port: 15014
         istio_sidecar_injector_config_map_name: "istio-sidecar-injector"
         url_service_version: ""
-        istio_api_enabled: false
+        istio_api_enabled: true
 
     # Istio labels configuration
-    istio_namespace: ""
+    istio_namespace: "istio-system"
     istio_labels:
       app_label_name: "app"
       version_label_name: "version"

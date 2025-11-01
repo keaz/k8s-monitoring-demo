@@ -6,6 +6,50 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+install_local_kiali() {
+    local manifests=(
+        "$PROJECT_ROOT/kubernetes/base/istio/kiali-rbac.yaml"
+        "$PROJECT_ROOT/kubernetes/base/istio/kiali-config.yaml"
+        "$PROJECT_ROOT/kubernetes/base/istio/kiali-deployment.yaml"
+    )
+
+    echo "Applying Kiali manifests from repository..."
+    for manifest in "${manifests[@]}"; do
+        if [ ! -f "$manifest" ]; then
+            echo "Error: required manifest not found: $manifest" >&2
+            return 1
+        fi
+        kubectl apply -f "$manifest"
+    done
+
+    return 0
+}
+
+apply_kiali_custom_config() {
+    local kiali_config="$PROJECT_ROOT/kubernetes/base/istio/kiali-custom-config.yaml"
+
+    if [ ! -f "$kiali_config" ]; then
+        echo "Skipping Kiali customization; config file not found at $kiali_config"
+        return
+    fi
+
+    if ! kubectl get deployment kiali -n istio-system >/dev/null 2>&1; then
+        echo "Kiali deployment not detected; custom monitoring endpoints not applied"
+        return
+    fi
+
+    echo "Applying custom Kiali configuration to reuse monitoring namespace services..."
+    kubectl apply -f "$kiali_config"
+
+    echo "Restarting Kiali so it picks up the updated configuration..."
+    kubectl rollout restart deployment/kiali -n istio-system
+    kubectl wait --for=condition=available --timeout=180s deployment/kiali -n istio-system || \
+        echo "Warning: Kiali did not become ready within 180s"
+}
+
 echo "========================================="
 echo "Installing Istio Service Mesh"
 echo "========================================="
@@ -72,12 +116,7 @@ fi
 
 if [[ $ADDONS_CHOICE == "1" ]]; then
     echo "Installing Kiali only..."
-    if [ -n "$ADDONS_DIR" ] && [ -d "$ADDONS_DIR" ]; then
-        kubectl apply -f "$ADDONS_DIR/kiali.yaml"
-    else
-        echo "Downloading Kiali from GitHub..."
-        kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samples/addons/kiali.yaml
-    fi
+    install_local_kiali
     echo "Waiting for Kiali to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment/kiali -n istio-system || true
     echo ""
@@ -89,14 +128,13 @@ elif [[ $ADDONS_CHOICE == "2" ]]; then
         kubectl apply -f "$ADDONS_DIR/prometheus.yaml"
         kubectl apply -f "$ADDONS_DIR/grafana.yaml"
         kubectl apply -f "$ADDONS_DIR/jaeger.yaml"
-        kubectl apply -f "$ADDONS_DIR/kiali.yaml"
     else
         echo "Downloading addons from GitHub..."
         kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samples/addons/prometheus.yaml
         kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samples/addons/grafana.yaml
         kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samples/addons/jaeger.yaml
-        kubectl apply -f https://raw.githubusercontent.com/istio/istio/release-1.24/samples/addons/kiali.yaml
     fi
+    install_local_kiali
     echo "Waiting for Kiali to be ready..."
     kubectl wait --for=condition=available --timeout=300s deployment/kiali -n istio-system || true
     echo ""
@@ -107,6 +145,8 @@ else
     echo "Skipping addon installation"
     echo "You can install later with: ./scripts/install-kiali-only.sh"
 fi
+
+apply_kiali_custom_config
 
 # Enable automatic sidecar injection for services namespace
 echo ""

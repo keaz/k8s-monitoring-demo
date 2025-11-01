@@ -50,6 +50,8 @@ spec:
     metadata:
       labels:
         app: postgres
+      annotations:
+        sidecar.istio.io/inject: "false"
     spec:
       containers:
       - name: postgres

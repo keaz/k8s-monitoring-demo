@@ -1,186 +1,737 @@
 # Kubernetes Cluster Monitoring with CNCF Tools
 
-A comprehensive demonstration of Kubernetes monitoring using CNCF (Cloud Native Computing Foundation) tools including Prometheus, Grafana, OpenTelemetry, and Jaeger.
+A comprehensive, production-ready demonstration of Kubernetes monitoring, observability, and service mesh using Cloud Native Computing Foundation (CNCF) tools. This project showcases a complete monitoring stack with distributed tracing, metrics collection, and service mesh capabilities.
+
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Quick Start](#quick-start)
+- [Deployment Options](#deployment-options)
+- [Components](#components)
+- [Service Mesh Options](#service-mesh-options)
+- [Access Dashboards](#access-dashboards)
+- [Testing and Traffic Generation](#testing-and-traffic-generation)
+- [Documentation](#documentation)
+- [Troubleshooting](#troubleshooting)
+
+---
 
 ## Architecture Overview
 
-This demo includes:
+This demo implements a complete cloud-native monitoring solution with the following components:
 
-### Monitoring Stack
+### Monitoring & Observability Stack
+
 - **Prometheus**: Metrics collection and storage (7-day retention)
 - **Grafana**: Metrics visualization and dashboards
-- **Node Exporter**: Node-level system metrics
-- **cAdvisor**: Container metrics (built into kubelet)
-- **OpenTelemetry Collector**: Traces and metrics collection with spanmetrics and servicegraph connectors
-- **Jaeger**: Distributed tracing UI with Service Performance Monitoring (SPM) and dependency visualization
+- **Jaeger**: Distributed tracing with Service Performance Monitoring (SPM)
+- **OpenTelemetry Collector**: Unified telemetry collection with spanmetrics and servicegraph connectors
 - **VictoriaMetrics**: Long-term metrics storage (14-day retention)
 - **VictoriaTraces**: Distributed tracing backend
+- **Node Exporter**: Node-level system metrics
+- **cAdvisor**: Container metrics (built into kubelet)
+
+### Infrastructure Components
+
+- **Apache Kafka**: Message broker with full monitoring and tracing
+  - Kafka Exporter: Topic and consumer group metrics
+  - JMX Exporter: Kafka broker metrics
+  - Zookeeper: Cluster coordination
+
+- **PostgreSQL**: Database with monitoring
+  - PostgreSQL Exporter: Database performance metrics
+  - Supports both in-cluster and external databases
+
+### Service Mesh Options
+
+Choose one based on your needs:
+
+- **Istio**: Feature-rich service mesh with Kiali dashboard
+  - Advanced traffic management (canary, A/B testing)
+  - Automatic mTLS and security policies
+  - Comprehensive observability
+
+- **Linkerd**: Lightweight, ultra-fast service mesh
+  - 8x lighter than Istio (~10MB vs ~80MB per sidecar)
+  - <1ms latency overhead
+  - Automatic mTLS
+  - Built-in golden metrics
 
 ### Microservices
-- **Java Services** (3): Spring Boot applications with Prometheus and OTEL instrumentation
-  - user-service: User management
-  - order-service: Order management (calls user-service)
-  - payment-service: Payment processing
 
-- **Rust Services** (5): Actix-web applications with Prometheus and OTEL instrumentation
-  - product-service: Product catalog
-  - inventory-service: Inventory management
-  - notification-service: Event notifications
-  - analytics-service: Data analytics
-  - gateway-service: API gateway
+- **Java Services** (3): Spring Boot applications with Prometheus and OpenTelemetry
+  - service-a: Producer service (Kafka integration)
+  - service-b: Consumer service
+  - service-c: Consumer service
 
-## Prerequisites
+- **Rust Services** (5): Actix-web applications with full instrumentation
+  - product-service, inventory-service, notification-service
+  - analytics-service, gateway-service
+
+---
+
+## Quick Start
+
+### Prerequisites
 
 - Docker
 - kubectl
 - kind (Kubernetes in Docker)
 - Maven (for Java services)
-- Rust and Cargo (for Rust services)
+- Rust and Cargo (for Rust services, optional)
 
-## Quick Start
+### Installation
 
-### 1. Create the Kubernetes Cluster
+#### Option 1: Full Deployment with Build (Recommended for First Time)
 
-The kind cluster is already created with port mappings for easy access to monitoring dashboards:
+Deploy everything including building services and monitoring stack:
 
 ```bash
-# Cluster is running at kind-monitoring-demo
-kubectl cluster-info --context kind-monitoring-demo
+# Create Kind cluster (if not exists)
+kind create cluster --name monitoring-demo --config kind-config.yaml
+
+# Build and deploy all components
+./scripts/build-and-deploy.sh
 ```
 
-### 2. Verify Monitoring Stack
-
-Check that all monitoring components are running:
+#### Option 2: Deploy with Istio Service Mesh
 
 ```bash
+# Deploy everything with Istio
+./scripts/deploy-with-istio.sh
+
+# When prompted, choose option 1 (Kiali only - no duplicates)
+```
+
+#### Option 3: Deploy with Linkerd Service Mesh (Lightweight)
+
+```bash
+# Deploy everything with Linkerd
+./scripts/deploy-with-linkerd.sh
+
+# When asked about Prometheus: Choose option 2 (External - RECOMMENDED)
+# Saves ~70m CPU and ~150Mi RAM while providing unified metrics
+```
+
+#### Option 4: Monitoring Stack Only
+
+```bash
+# Deploy only monitoring components
+./scripts/deploy-monitoring.sh
+```
+
+### Verify Deployment
+
+```bash
+# Check monitoring components
 kubectl get pods -n monitoring
+
+# Check services
+kubectl get pods -n services
+
+# Check service mesh (if deployed)
+kubectl get pods -n istio-system   # For Istio
+kubectl get pods -n linkerd        # For Linkerd
 ```
 
 Expected output:
 ```
-NAME                              READY   STATUS    RESTARTS   AGE
-prometheus-xxx                    1/1     Running   0          5m
-grafana-xxx                       1/1     Running   0          5m
-jaeger-xxx                        1/1     Running   0          5m
-otel-collector-xxx                1/1     Running   0          5m
-node-exporter-xxx                 1/1     Running   0          5m
+NAMESPACE     NAME                              READY   STATUS    RESTARTS   AGE
+monitoring    prometheus-xxx                    1/1     Running   0          5m
+monitoring    grafana-xxx                       1/1     Running   0          5m
+monitoring    jaeger-xxx                        1/1     Running   0          5m
+monitoring    otel-collector-xxx                1/1     Running   0          5m
+monitoring    kafka-0                           2/2     Running   0          5m
+monitoring    postgres-exporter-xxx             1/1     Running   0          5m
+services      service-a-xxx                     1/1     Running   0          5m
+services      service-b-xxx                     1/1     Running   0          5m
+services      service-c-xxx                     1/1     Running   0          5m
 ```
 
-### 3. Access Monitoring Dashboards
+---
 
-The dashboards are exposed via NodePort and mapped to your localhost:
+## Deployment Options
 
-- **Prometheus**: http://localhost:9090
-  - Query metrics, view targets, explore service discovery
-  - Access: `http://localhost:30000`
+This project provides multiple deployment scripts for different scenarios:
 
-- **Grafana**: http://localhost:3000
-  - Username: `admin`
-  - Password: `admin`
-  - Pre-configured with Prometheus, Jaeger, and VictoriaMetrics datasources
-  - Access: `http://localhost:30001`
+| Script | Use Case | What It Does |
+|--------|----------|--------------|
+| `build-and-deploy.sh` | **First deployment** | Builds services + deploys monitoring |
+| `deploy-with-istio.sh` | **Istio mesh** | Full deployment with Istio + Kiali |
+| `deploy-with-linkerd.sh` | **Linkerd mesh** | Full deployment with lightweight Linkerd |
+| `deploy-monitoring.sh` | **Monitoring only** | Deploys only monitoring stack |
+| `install-istio.sh` | **Add Istio later** | Adds Istio to existing deployment |
+| `install-linkerd.sh` | **Add Linkerd later** | Adds Linkerd to existing deployment |
 
-- **Jaeger UI**: http://localhost:30002
-  - **Traces**: View distributed traces with full request context
-  - **Monitor Tab**: Service Performance Monitoring (SPM) - RED metrics from traces
-  - **System Architecture**: Service dependency graph and call volumes
-  - This is your primary tool for service visualization!
+### Choosing Between Service Meshes
 
-- **VictoriaMetrics**: http://localhost:30003
-  - Long-term metrics storage
-  - Prometheus-compatible query interface
+| Feature | Linkerd | Istio |
+|---------|---------|-------|
+| **Resource Usage** | Ultra-light (~10MB/sidecar) | Heavy (~80MB/sidecar) |
+| **Complexity** | Simple, minimal config | Feature-rich, complex |
+| **Latency** | <1ms p99 overhead | ~2-5ms p99 overhead |
+| **Learning Curve** | Easy | Steep |
+| **Dashboard** | Linkerd Viz | Kiali (advanced) |
+| **Best For** | Production, resource-constrained | Advanced traffic management |
 
-- **VictoriaTraces**: http://localhost:30004
-  - Alternative tracing backend
+**Recommendation**:
+- Use **Linkerd** for resource-constrained environments (like Kind) and production simplicity
+- Use **Istio** if you need Kiali dashboard or advanced traffic management features
+
+See [LINKERD_VS_ISTIO.md](LINKERD_VS_ISTIO.md) for detailed comparison.
+
+---
+
+## Components
+
+### Monitoring Stack Details
+
+#### Prometheus Configuration
+
+**Scrape Configurations**:
+- Kubernetes service discovery (API Server, kubelet, nodes)
+- Pod annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`)
+- Kafka metrics (JMX Exporter, Kafka Exporter)
+- PostgreSQL metrics (PostgreSQL Exporter)
+- Service mesh metrics (Istio/Linkerd)
+
+**Key Metrics Available**:
+- `http_server_requests_seconds`: Request duration and counts
+- `jvm_memory_used_bytes`: JVM memory usage
+- `kafka_server_brokertopicmetrics_*`: Kafka broker metrics
+- `kafka_consumergroup_lag`: Consumer group lag
+- `pg_stat_*`: PostgreSQL statistics
+- Custom application metrics
+
+#### OpenTelemetry Pipeline
+
+```
+Applications → OTEL Collector → Jaeger (traces)
+                              → Prometheus (metrics via spanmetrics)
+                              → VictoriaTraces (traces)
+```
+
+**Features**:
+- Automatic trace context propagation
+- Span metrics generation (RED metrics from traces)
+- Service graph generation
+- Kafka message tracing
+
+#### Jaeger Tracing
+
+**Components**:
+- All-in-one deployment (collector + query + UI)
+- OTLP receiver for OpenTelemetry
+- In-memory storage (configurable for production)
+
+**Features**:
+- Distributed traces with full request context
+- Service Performance Monitoring (SPM) - RED metrics from traces
+- Service dependency graphs
+- Trace correlation with logs and metrics
+
+### Infrastructure Components
+
+#### Kafka Integration
+
+- **Single-broker cluster** with Zookeeper
+- **Full distributed tracing** for producer and consumer operations
+- **Comprehensive metrics**:
+  - JMX Exporter: Broker internals, JVM metrics
+  - Kafka Exporter: Topic metrics, consumer group lag
+- **Auto-configured topics** with retention policies
+
+See [KAFKA_SETUP.md](KAFKA_SETUP.md) for detailed setup.
+
+#### PostgreSQL Monitoring
+
+- **PostgreSQL Exporter** for database metrics
+- Supports **external databases** (typical production scenario)
+- **Comprehensive metrics**:
+  - Connection pool statistics
+  - Query performance
+  - Table and index statistics
+  - Replication lag
+
+See [EXTERNAL_POSTGRES.md](EXTERNAL_POSTGRES.md) for external database configuration.
+
+---
+
+## Service Mesh Options
+
+### Istio Service Mesh
+
+Istio provides enterprise-grade service mesh capabilities:
+
+**Quick Start**:
+```bash
+./scripts/deploy-with-istio.sh
+# Choose option 1: Kiali only (recommended - no duplicates)
+```
+
+**What You Get**:
+- Kiali dashboard for service visualization
+- Advanced traffic management (canary, A/B testing, fault injection)
+- Automatic mTLS between all services
+- Authorization policies and security
+- Enhanced observability with service-level metrics
+
+**Access Kiali**:
+```bash
+kubectl port-forward svc/kiali -n istio-system 20001:20001
+```
+Open: http://localhost:20001
+
+**Documentation**:
+- [ISTIO_QUICK_START.md](ISTIO_QUICK_START.md) - 5-minute guide
+- [ISTIO_SETUP.md](ISTIO_SETUP.md) - Complete setup guide
+- [ISTIO_TRAFFIC_MANAGEMENT.md](ISTIO_TRAFFIC_MANAGEMENT.md) - Traffic patterns
+- [ISTIO_OBSERVABILITY.md](ISTIO_OBSERVABILITY.md) - Kiali and metrics
+- [DEPLOYMENT_OPTIONS.md](DEPLOYMENT_OPTIONS.md) - Avoid duplicate monitoring tools
+
+### Linkerd Service Mesh (Lightweight Alternative)
+
+Linkerd provides production-ready service mesh with minimal overhead:
+
+**Quick Start**:
+```bash
+./scripts/deploy-with-linkerd.sh
+# When asked about Prometheus: Choose option 2 (External - RECOMMENDED)
+```
+
+**What You Get**:
+- Automatic mTLS with zero configuration
+- Golden metrics (success rate, RPS, latency p50/p95/p99)
+- Live traffic tap for real-time request inspection
+- Service profiles for per-route metrics
+- Traffic splitting for canary deployments
+
+**Access Linkerd Dashboard**:
+```bash
+export PATH=$HOME/.linkerd2/bin:$PATH
+linkerd viz dashboard
+```
+Or manually:
+```bash
+kubectl port-forward -n linkerd-viz svc/web 8084:8084
+```
+Open: http://localhost:8084
+
+**Prometheus Integration**:
+This demo offers two Prometheus options for Linkerd:
+
+1. **Embedded Prometheus** (default)
+   - Separate Prometheus in `linkerd-viz` namespace
+   - Quick setup, good for demos
+
+2. **External Prometheus** (RECOMMENDED)
+   - Uses existing Prometheus in `monitoring` namespace
+   - Saves ~70m CPU, ~150Mi RAM (20% reduction!)
+   - Unified metrics in one place
+   - Fully automated in deployment script
+
+**Documentation**:
+- [LINKERD_QUICK_START.md](LINKERD_QUICK_START.md) - 5-minute guide
+- [LINKERD_SETUP.md](LINKERD_SETUP.md) - Complete setup guide
+- [LINKERD_TRAFFIC_MANAGEMENT.md](LINKERD_TRAFFIC_MANAGEMENT.md) - Canary deployments
+- [LINKERD_OBSERVABILITY.md](LINKERD_OBSERVABILITY.md) - Metrics and tap
+- [LINKERD_PROMETHEUS_OPTIONS.md](LINKERD_PROMETHEUS_OPTIONS.md) - Embedded vs External
+- [LINKERD_VISUALIZATION.md](LINKERD_VISUALIZATION.md) - Dashboard guide
+
+**Important**: Don't run both Istio and Linkerd in the same namespace! Choose one per namespace.
+
+See [TROUBLESHOOTING_MESHES.md](TROUBLESHOOTING_MESHES.md) for conflict resolution.
+
+---
+
+## Access Dashboards
+
+### Using Port Forwarding (Recommended for Kind)
+
+Since Kind doesn't provide external LoadBalancer IPs, use port forwarding:
+
+**Automated Port Forwarding**:
+```bash
+# Start all port forwards (runs in foreground)
+./scripts/port-forward.sh
+```
+
+**Manual Port Forwarding**:
+```bash
+# Prometheus
+kubectl port-forward -n monitoring svc/prometheus 9090:9090
+
+# Grafana
+kubectl port-forward -n monitoring svc/grafana 3000:3000
+
+# Jaeger UI
+kubectl port-forward -n monitoring svc/jaeger-query 16686:16686
+
+# Service-A (for testing)
+kubectl port-forward -n services svc/service-a 8888:80
+
+# Kiali (if using Istio)
+kubectl port-forward -n istio-system svc/kiali 20001:20001
+
+# Linkerd Dashboard (if using Linkerd)
+kubectl port-forward -n linkerd-viz svc/web 8084:8084
+```
+
+### Dashboard Access URLs
+
+| Service | URL | Credentials | Description |
+|---------|-----|-------------|-------------|
+| **Prometheus** | http://localhost:9090 | - | Query metrics, view targets |
+| **Grafana** | http://localhost:3000 | admin / admin | Dashboards and visualization |
+| **Jaeger UI** | http://localhost:16686 | - | Distributed traces and SPM |
+| **VictoriaMetrics** | http://localhost:8428 | - | Long-term metrics storage |
+| **Kiali** (Istio) | http://localhost:20001 | - | Service mesh topology |
+| **Linkerd Viz** | http://localhost:8084 | - | Service mesh metrics |
+| **Service-A** | http://localhost:8888 | - | Test service endpoint |
+
+### Dashboard Features
+
+#### Prometheus (http://localhost:9090)
+- Query and explore all metrics
+- View scrape targets and service discovery
+- Monitor recording rules and alerts
+- Prometheus-compatible PromQL queries
+
+#### Grafana (http://localhost:3000)
+- Pre-configured with datasources:
+  - Prometheus (monitoring namespace)
+  - Jaeger (trace correlation)
+  - VictoriaMetrics (long-term storage)
+- Create custom dashboards
+- Import community dashboards
+- Explore logs, metrics, and traces together
+
+#### Jaeger (http://localhost:16686)
+- **Traces Tab**: View distributed traces across services
+- **Monitor Tab**: Service Performance Monitoring (RED metrics)
+- **System Architecture**: Service dependency graph
+- Trace search with filters (service, operation, tags, duration)
+- Trace comparison and analysis
+
+---
+
+## Testing and Traffic Generation
+
+### Generate Kafka Traffic
+
+```bash
+# Generate traffic for 60 seconds (default)
+./scripts/generate-kafka-traffic.sh
+
+# Custom duration (30 seconds)
+DURATION=30 ./scripts/generate-kafka-traffic.sh
+```
+
+### Generate HTTP Traffic
+
+```bash
+# Generate HTTP traffic to services
+./scripts/generate-traffic.sh
+
+# Custom duration
+DURATION=120 ./scripts/generate-traffic.sh
+```
+
+### Manual Testing
+
+#### Test Kafka Integration
+
+```bash
+# Send a message to Kafka
+curl http://localhost:8888/api/kafka/send/TestMessage
+
+# Check consumer logs
+kubectl logs -n services deploy/service-b -f | grep Kafka
+kubectl logs -n services deploy/service-c -f | grep Kafka
+```
+
+#### Test Service Communication
+
+```bash
+# Call service-a
+curl http://localhost:8888/api/hello
+
+# View traces in Jaeger
+# 1. Open http://localhost:16686
+# 2. Select "service-a" from dropdown
+# 3. Click "Find Traces"
+# 4. Explore the distributed trace
+```
+
+### View Metrics in Prometheus
+
+Open http://localhost:9090 and try these queries:
+
+```promql
+# Request rate
+rate(http_server_requests_seconds_count[5m])
+
+# P95 latency
+histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m]))
+
+# Error rate
+rate(http_server_requests_seconds_count{status=~"5.."}[5m])
+
+# Kafka message rate
+rate(kafka_server_brokertopicmetrics_messagesin_total[1m])
+
+# Consumer lag
+kafka_consumergroup_lag
+
+# PostgreSQL connections
+pg_stat_database_numbackends
+```
+
+---
 
 ## Project Structure
 
 ```
 k8s-monitoring-demo/
-├── kind-config.yaml              # Kind cluster configuration
+├── kind-config.yaml                    # Kind cluster configuration
 ├── kubernetes/
-│   ├── base/                     # Base Kubernetes manifests
+│   ├── base/                          # Base Kubernetes manifests
 │   │   ├── namespaces.yaml
-│   │   ├── storage/              # Persistent volume claims
-│   │   ├── prometheus/           # Prometheus stack (7-day retention)
-│   │   ├── grafana/              # Grafana dashboards
-│   │   ├── jaeger/               # Jaeger tracing (production setup with SPM)
-│   │   ├── otel-collector/       # OpenTelemetry Collector (contrib with connectors)
-│   │   ├── node-exporter/        # Node metrics exporter
-│   │   ├── victoriametrics/      # VictoriaMetrics and VictoriaTraces
-│   │   └── services/             # Microservice deployments
-│   └── overlays/
-│       └── dev/                  # Development overlays
-│           └── kustomization.yaml
+│   │   ├── storage/                   # Persistent volume claims
+│   │   ├── prometheus/                # Prometheus stack (7-day retention)
+│   │   ├── grafana/                   # Grafana dashboards
+│   │   ├── jaeger/                    # Jaeger tracing (SPM enabled)
+│   │   ├── otel-collector/            # OpenTelemetry Collector
+│   │   ├── node-exporter/             # Node metrics exporter
+│   │   ├── victoriametrics/           # VictoriaMetrics and VictoriaTraces
+│   │   ├── kafka/                     # Kafka with Zookeeper
+│   │   ├── postgres/                  # PostgreSQL with exporter
+│   │   ├── istio/                     # Istio configurations
+│   │   ├── linkerd/                   # Linkerd configurations
+│   │   └── services/                  # Microservice deployments
+│   ├── overlays/
+│   │   └── dev/                       # Development overlays
+│   └── linkerd/                       # Linkerd-specific configs
 ├── services/
-│   ├── java/                     # Java microservices
-│   │   ├── user-service/
-│   │   ├── order-service/
-│   │   └── payment-service/
-│   └── rust/                     # Rust microservices
-│       ├── product-service/
-│       ├── inventory-service/
-│       ├── notification-service/
-│       ├── analytics-service/
-│       └── gateway-service/
+│   ├── java/                          # Java microservices
+│   │   ├── service-a/                 # Kafka producer
+│   │   ├── service-b/                 # Kafka consumer
+│   │   └── service-c/                 # Kafka consumer
+│   └── rust/                          # Rust microservices (5 services)
 ├── scripts/
-│   ├── build-and-deploy.sh              # Build and deployment script
-│   ├── generate-traffic.sh              # Traffic generation for testing
-│   ├── deploy-demo.sh                   # Deploy mock services
-│   └── test-services.sh                 # Test service endpoints
-├── grafana-dashboards/
-│   └── jaeger-spm-dashboard.json        # Jaeger SPM dashboard
+│   ├── build-and-deploy.sh           # Build and deploy everything
+│   ├── deploy-with-istio.sh          # Deploy with Istio mesh
+│   ├── deploy-with-linkerd.sh        # Deploy with Linkerd mesh
+│   ├── deploy-monitoring.sh          # Deploy monitoring only
+│   ├── install-istio.sh              # Add Istio to existing setup
+│   ├── install-linkerd.sh            # Add Linkerd to existing setup
+│   ├── generate-kafka-traffic.sh     # Kafka traffic generator
+│   ├── generate-traffic.sh           # HTTP traffic generator
+│   ├── port-forward.sh               # Setup all port forwards
+│   └── cleanup-*.sh                  # Cleanup scripts
 └── docs/
-    ├── MONITORING_SETUP.md              # Detailed monitoring setup guide
-    ├── PROMETHEUS.md                    # Prometheus configuration guide
-    ├── GRAFANA.md                       # Grafana dashboard guide
-    ├── OTEL_TRACING.md                  # OpenTelemetry tracing guide
-    ├── JAEGER_SPM_SETUP.md              # Jaeger Service Performance Monitoring
-    ├── JAEGER_DEPENDENCIES_TROUBLESHOOTING.md  # Service dependencies troubleshooting
-    └── PERSISTENT_STORAGE.md            # Production storage configuration
+    ├── MONITORING_SETUP.md           # Detailed monitoring guide
+    ├── PROMETHEUS.md                 # Prometheus configuration
+    ├── GRAFANA.md                    # Grafana dashboard guide
+    ├── OTEL_TRACING.md               # OpenTelemetry guide
+    └── JAEGER_SPM_SETUP.md           # Jaeger SPM guide
 ```
 
-## Monitoring Features
+---
 
-### Prometheus Metrics
+## Documentation
 
-Prometheus is configured to scrape metrics from:
+### Getting Started
+- [QUICK_START.md](QUICK_START.md) - Fastest way to get running
+- [DEPLOYMENT_OPTIONS.md](DEPLOYMENT_OPTIONS.md) - All deployment scenarios
 
-1. **Kubernetes Components**
-   - API Server
-   - Kubelet (includes cAdvisor metrics)
-   - Nodes
+### Monitoring & Observability
+- [docs/MONITORING_SETUP.md](docs/MONITORING_SETUP.md) - Complete monitoring setup
+- [docs/PROMETHEUS.md](docs/PROMETHEUS.md) - Prometheus configuration details
+- [docs/GRAFANA.md](docs/GRAFANA.md) - Grafana dashboards guide
+- [docs/OTEL_TRACING.md](docs/OTEL_TRACING.md) - OpenTelemetry tracing
+- [docs/JAEGER_SPM_SETUP.md](docs/JAEGER_SPM_SETUP.md) - Service Performance Monitoring
+- [VICTORIA_DASHBOARD_GUIDE.md](VICTORIA_DASHBOARD_GUIDE.md) - VictoriaMetrics guide
 
-2. **System Metrics**
-   - Node Exporter: CPU, memory, disk, network
+### Infrastructure
+- [KAFKA_SETUP.md](KAFKA_SETUP.md) - Kafka integration and monitoring
+- [EXTERNAL_POSTGRES.md](EXTERNAL_POSTGRES.md) - PostgreSQL external DB setup
+- [POSTGRES_EXPORTER_SUMMARY.md](POSTGRES_EXPORTER_SUMMARY.md) - PostgreSQL metrics
 
-3. **Application Metrics**
-   - Custom metrics from Java services (via Micrometer)
-   - Custom metrics from Rust services (via prometheus crate)
-   - Annotations-based service discovery
+### Service Mesh - Istio
+- [ISTIO_QUICK_START.md](ISTIO_QUICK_START.md) - Get started in 5 minutes
+- [ISTIO_SETUP.md](ISTIO_SETUP.md) - Complete installation guide
+- [ISTIO_TRAFFIC_MANAGEMENT.md](ISTIO_TRAFFIC_MANAGEMENT.md) - Traffic patterns
+- [ISTIO_OBSERVABILITY.md](ISTIO_OBSERVABILITY.md) - Kiali and monitoring
+- [ISTIO_ARCHITECTURE.md](ISTIO_ARCHITECTURE.md) - Architecture details
+- [ISTIO_FEATURES_DEMO.md](ISTIO_FEATURES_DEMO.md) - Feature demonstrations
 
-### Grafana Dashboards
+### Service Mesh - Linkerd
+- [LINKERD_QUICK_START.md](LINKERD_QUICK_START.md) - Get started in 5 minutes
+- [LINKERD_SETUP.md](LINKERD_SETUP.md) - Complete installation guide
+- [LINKERD_TRAFFIC_MANAGEMENT.md](LINKERD_TRAFFIC_MANAGEMENT.md) - Canary deployments
+- [LINKERD_OBSERVABILITY.md](LINKERD_OBSERVABILITY.md) - Metrics and tap
+- [LINKERD_PROMETHEUS_OPTIONS.md](LINKERD_PROMETHEUS_OPTIONS.md) - Prometheus choices
+- [LINKERD_VISUALIZATION.md](LINKERD_VISUALIZATION.md) - Dashboard guide
+- [LINKERD_VS_ISTIO.md](LINKERD_VS_ISTIO.md) - Comparison guide
 
-Grafana is pre-configured with:
-- Prometheus datasource
-- Jaeger datasource for trace correlation
-- Auto-provisioned dashboard providers
+### Troubleshooting
+- [TROUBLESHOOTING_MESHES.md](TROUBLESHOOTING_MESHES.md) - Service mesh issues
+- [docs/JAEGER_DEPENDENCIES_TROUBLESHOOTING.md](docs/JAEGER_DEPENDENCIES_TROUBLESHOOTING.md) - Jaeger dependencies
+- [AUTOMATED_FIXES.md](AUTOMATED_FIXES.md) - What's been automated
 
-**Create dashboards for:**
-- Cluster overview (nodes, pods, resources)
-- Application metrics (request rates, latencies, errors)
-- JVM metrics (for Java services)
-- Custom business metrics
+---
 
-### Distributed Tracing
+## Troubleshooting
 
-OpenTelemetry instrumentation captures:
-- HTTP requests/responses
-- Service-to-service calls
-- Custom spans in application code
-- Correlation with logs and metrics
+### Common Issues
 
-Traces are exported to Jaeger via the OTEL Collector.
+#### Pods Not Starting
+
+```bash
+# Check pod status
+kubectl get pods -n monitoring
+kubectl get pods -n services
+
+# View pod logs
+kubectl logs -n services <pod-name>
+
+# Describe pod for events
+kubectl describe pod -n services <pod-name>
+```
+
+#### Prometheus Not Scraping Services
+
+Check service annotations:
+```yaml
+annotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: "/metrics"
+```
+
+Verify targets in Prometheus:
+- Open http://localhost:9090/targets
+- All targets should show "UP" status
+
+#### Jaeger Not Receiving Traces
+
+```bash
+# Check OTEL Collector logs
+kubectl logs -n monitoring deployment/otel-collector
+
+# Verify service configuration
+kubectl get deployment service-a -n services -o yaml | grep OTEL_EXPORTER
+
+# Should show: http://otel-collector.monitoring.svc.cluster.local:4317
+```
+
+#### Port Forwarding Issues
+
+```bash
+# Kill existing port forwards
+pkill -f "kubectl port-forward"
+
+# Restart port forwards
+./scripts/port-forward.sh
+```
+
+#### Service Mesh Conflicts
+
+```bash
+# If running both Istio and Linkerd (not recommended)
+./scripts/cleanup-mesh-conflicts.sh
+
+# Remove Istio
+kubectl delete namespace istio-system
+
+# Remove Linkerd
+linkerd viz uninstall | kubectl delete -f -
+linkerd uninstall | kubectl delete -f -
+```
+
+#### Kafka Issues
+
+```bash
+# Check Kafka broker status
+kubectl logs -n services kafka-0 -c kafka
+
+# Check Zookeeper
+kubectl logs -n services zookeeper-0
+
+# Verify metrics endpoints
+kubectl exec -n services kafka-0 -c kafka -- \
+  curl -s http://localhost:5556/metrics | head -20
+```
+
+### Resource Issues
+
+If running on resource-constrained environments:
+
+1. **Use Linkerd instead of Istio**: Saves ~70MB per pod
+2. **Use external Prometheus for Linkerd**: Saves ~70m CPU, ~150Mi RAM
+3. **Reduce retention periods**: Edit Prometheus and VictoriaMetrics configs
+4. **Scale down replicas**: Adjust in `kubernetes/overlays/dev/kustomization.yaml`
+
+---
+
+## Service Communication Flow
+
+```
+User Request
+    ↓
+gateway-service (Rust)
+    ↓
+service-a (Java) ──▶ Kafka ──▶ service-b (Java)
+    │                   │
+    │                   └──▶ service-c (Java)
+    │
+    ├─▶ product-service (Rust)
+    ├─▶ inventory-service (Rust)
+    └─▶ analytics-service (Rust)
+
+Monitoring Flow:
+Services ──▶ OTEL Collector ──▶ Jaeger (traces)
+                            └──▶ Prometheus (metrics)
+
+Service Mesh (if enabled):
+Sidecar Proxies ──▶ Prometheus (mesh metrics)
+                └──▶ Kiali/Linkerd Viz (visualization)
+```
+
+---
+
+## Cleanup
+
+### Delete Specific Components
+
+```bash
+# Delete services only
+kubectl delete -k kubernetes/overlays/dev/
+
+# Delete Istio
+kubectl delete namespace istio-system
+
+# Delete Linkerd
+linkerd viz uninstall | kubectl delete -f -
+linkerd uninstall | kubectl delete -f -
+```
+
+### Delete Entire Cluster
+
+```bash
+# Delete the Kind cluster (removes everything)
+kind delete cluster --name monitoring-demo
+```
+
+### Cleanup While Preserving Data
+
+```bash
+# Remove components but keep PVCs
+./scripts/cleanup-preserve-data.sh
+```
+
+---
 
 ## Kubernetes Deployment with Kustomize
 
@@ -198,140 +749,28 @@ Located in `kubernetes/overlays/dev/`, provides:
 - Resource limits/requests adjustments
 - Replica counts
 
-### Deploy using Kustomize
+### Deploy Using Kustomize
 
 ```bash
 # Deploy everything
 kubectl apply -k kubernetes/overlays/dev/
 
-# View what will be applied
+# View what will be applied (dry-run)
 kubectl kustomize kubernetes/overlays/dev/
+
+# Delete deployment
+kubectl delete -k kubernetes/overlays/dev/
 ```
 
-## Service Communication Flow
+### Customize for Your Environment
 
-```
-User Request
-    ↓
-gateway-service (Rust)
-    ↓
-order-service (Java)
-    ├→ user-service (Java)
-    ├→ product-service (Rust)
-    ├→ inventory-service (Rust)
-    └→ payment-service (Java)
-        └→ notification-service (Rust)
-
-analytics-service (Rust) ← Consumes metrics from all services
-```
-
-## Observability Stack Details
-
-### Prometheus Configuration
-
-**Scrape Configurations:**
-- Kubernetes service discovery
-- Pod annotations (`prometheus.io/scrape`, `prometheus.io/port`, `prometheus.io/path`)
-- Static configs for monitoring stack components
-
-**Key Metrics to Monitor:**
-- `http_server_requests_seconds`: Request duration
-- `jvm_memory_used_bytes`: JVM memory usage
-- `process_cpu_seconds_total`: CPU usage
-- Custom application metrics
-
-### OpenTelemetry Setup
-
-**OTEL Collector Pipeline:**
-```
-Applications → OTEL Collector → Jaeger (traces)
-                              → Prometheus (metrics)
-```
-
-**Instrumentation:**
-- Java: OpenTelemetry Java Agent + SDK
-- Rust: opentelemetry-rust crates
-
-### Jaeger Tracing
-
-**Components:**
-- All-in-one deployment (collector + query + UI)
-- OTLP receiver enabled for OpenTelemetry compatibility
-- In-memory storage (for demo purposes)
-
-## Building Services
-
-### Java Services
-
-```bash
-cd services/java/user-service
-mvn clean package
-docker build -t user-service:latest .
-kind load docker-image user-service:latest --name monitoring-demo
-```
-
-### Rust Services
-
-```bash
-cd services/rust/product-service
-cargo build --release
-docker build -t product-service:latest .
-kind load docker-image product-service:latest --name monitoring-demo
-```
-
-## Testing the Setup
-
-### 1. Generate Traffic
-
-```bash
-# Get a service endpoint
-kubectl port-forward -n services svc/user-service 8080:80
-
-# Make requests
-curl http://localhost:8080/api/users/1
-curl http://localhost:8080/api/users
-```
-
-### 2. View Metrics in Prometheus
-
-1. Open http://localhost:9090
-2. Try queries:
-   ```promql
-   # Request rate
-   rate(http_server_requests_seconds_count[5m])
-
-   # P95 latency
-   histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m]))
-
-   # Error rate
-   rate(http_server_requests_seconds_count{status=~"5.."}[5m])
-   ```
-
-### 3. View Traces in Jaeger
-
-1. Open http://localhost:16686
-2. Select a service from dropdown
-3. Click "Find Traces"
-4. Explore trace details and service dependencies
-
-### 4. Create Grafana Dashboards
-
-1. Open http://localhost:3000 (admin/admin)
-2. Create → Dashboard
-3. Add panels with Prometheus queries
-4. Save dashboard
-
-## Kustomization for Other Clusters
-
-To deploy this monitoring stack on another cluster:
-
-### 1. Create a new overlay
+Create a new overlay for production:
 
 ```bash
 mkdir -p kubernetes/overlays/production
 ```
 
-### 2. Create kustomization.yaml
+Create `kubernetes/overlays/production/kustomization.yaml`:
 
 ```yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -348,110 +787,30 @@ resources:
 - ../../base/node-exporter
 
 patchesStrategicMerge:
-- prometheus-patch.yaml  # Adjust resources, retention, etc.
-- grafana-patch.yaml     # Persistent storage, etc.
+- prometheus-patch.yaml  # Adjust resources, retention
+- grafana-patch.yaml     # Add persistent storage
 ```
 
-### 3. Apply to your cluster
+Apply to your cluster:
 
 ```bash
 kubectl apply -k kubernetes/overlays/production/
 ```
 
-## Troubleshooting
-
-### Prometheus not scraping services
-
-Check service annotations:
-```yaml
-annotations:
-  prometheus.io/scrape: "true"
-  prometheus.io/port: "8080"
-  prometheus.io/path: "/metrics"
-```
-
-### Jaeger not receiving traces
-
-1. Check OTEL Collector logs:
-   ```bash
-   kubectl logs -n monitoring deployment/otel-collector
-   ```
-
-2. Verify service configuration:
-   ```yaml
-   env:
-   - name: OTEL_EXPORTER_OTLP_ENDPOINT
-     value: "http://otel-collector.monitoring.svc.cluster.local:4317"
-   ```
-
-### Services not starting
-
-Check pod logs:
-```bash
-kubectl logs -n services <pod-name>
-kubectl describe pod -n services <pod-name>
-```
-
-## Cleanup
-
-```bash
-# Delete the kind cluster
-kind delete cluster --name monitoring-demo
-
-# Or just delete the deployments
-kubectl delete -k kubernetes/overlays/dev/
-```
-
-## Istio Service Mesh Integration
-
-This demo now includes **Istio service mesh** support for advanced traffic management, security, and observability!
-
-### Quick Start with Istio
-
-**Option 1: Deploy everything including Istio**
-```bash
-./scripts/deploy-with-istio.sh
-```
-
-**Option 2: Add Istio to existing deployment**
-```bash
-./scripts/install-istio.sh
-kubectl apply -f kubernetes/base/istio/istio-gateway.yaml
-kubectl apply -f kubernetes/base/istio/destination-rules.yaml
-kubectl rollout restart deployment -n services
-```
-
-### What Istio Adds
-
-- **Service Mesh Visualization**: Kiali dashboard showing real-time service topology
-- **Traffic Management**: Canary deployments, A/B testing, fault injection
-- **Security**: Automatic mTLS between services, authorization policies
-- **Enhanced Observability**: Service-level metrics, distributed tracing, access logs
-- **Resilience**: Circuit breakers, retries, timeouts
-
-### Access Kiali Dashboard
-
-```bash
-kubectl port-forward svc/kiali -n istio-system 20001:20001
-```
-
-Open: http://localhost:20001
-
-### Istio Documentation
-
-- **[Quick Start Guide](ISTIO_QUICK_START.md)** - Get started in 5 minutes
-- **[Complete Setup Guide](ISTIO_SETUP.md)** - Detailed installation and configuration
-- **[Traffic Management](ISTIO_TRAFFIC_MANAGEMENT.md)** - Canary, A/B testing, fault injection examples
-- **[Observability Guide](ISTIO_OBSERVABILITY.md)** - Kiali, metrics, and distributed tracing
+---
 
 ## Next Steps
 
-1. **Service Mesh**: Try Istio features with the guides above
-2. **Add Persistent Storage**: Configure PVCs for Prometheus and Grafana
-3. **Alerting**: Set up Alertmanager with Prometheus
-4. **Log Aggregation**: Add Loki or ELK stack
-5. **Custom Dashboards**: Create application-specific Grafana dashboards
+1. **Service Mesh**: Try Istio or Linkerd features with the guides above
+2. **Custom Dashboards**: Create application-specific Grafana dashboards
+3. **Persistent Storage**: Configure PVCs for production (see [docs/PERSISTENT_STORAGE.md](docs/PERSISTENT_STORAGE.md))
+4. **Alerting**: Set up Alertmanager with Prometheus
+5. **Log Aggregation**: Add Loki or ELK stack for logs
 6. **SLOs**: Define and monitor Service Level Objectives
+7. **External Databases**: Connect PostgreSQL exporter to your databases
+8. **Production Hardening**: Review security policies and resource limits
+
+---
 
 ## References
 
@@ -459,8 +818,28 @@ Open: http://localhost:20001
 - [Grafana Documentation](https://grafana.com/docs/)
 - [OpenTelemetry Documentation](https://opentelemetry.io/docs/)
 - [Jaeger Documentation](https://www.jaegertracing.io/docs/)
+- [Istio Documentation](https://istio.io/latest/docs/)
+- [Linkerd Documentation](https://linkerd.io/docs/)
+- [Apache Kafka Documentation](https://kafka.apache.org/documentation/)
 - [Kustomize Documentation](https://kustomize.io/)
+
+---
+
+## Contributing
+
+This is a demonstration project for educational purposes. Feel free to:
+- Experiment with configurations
+- Add new services
+- Create custom dashboards
+- Test different deployment scenarios
+- Extend monitoring capabilities
+
+---
 
 ## License
 
 This is a demonstration project for educational purposes.
+
+---
+
+**Built with love for the Cloud Native community** ☁️

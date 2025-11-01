@@ -1,0 +1,96 @@
+# Simplified ServiceProfiles compatible with Linkerd edge-25.10+
+# These enable per-route metrics and timeouts
+# Retries are now automatic in Linkerd
+
+---
+# ServiceProfile for service-a
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-a.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    timeout: 10s
+
+  - name: GET /api/call-b
+    condition:
+      method: GET
+      pathRegex: /api/call-b
+    timeout: 15s
+
+  - name: GET /api/call-c
+    condition:
+      method: GET
+      pathRegex: /api/call-c
+    timeout: 15s
+
+  - name: POST /api/kafka/send
+    condition:
+      method: POST
+      pathRegex: /api/kafka/send/.*
+    timeout: 30s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    timeout: 5s
+
+  - name: GET /actuator/metrics
+    condition:
+      method: GET
+      pathRegex: /actuator/metrics.*
+    timeout: 5s
+
+---
+# ServiceProfile for service-b
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-b.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    timeout: 10s
+
+  - name: GET /api/call-c
+    condition:
+      method: GET
+      pathRegex: /api/call-c
+    timeout: 15s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    timeout: 5s
+
+---
+# ServiceProfile for service-c
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-c.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    timeout: 10s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    timeout: 5s

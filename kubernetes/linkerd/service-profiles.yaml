@@ -1,0 +1,234 @@
+# Linkerd ServiceProfiles - Define per-route metrics, retries, and timeouts
+# ServiceProfiles enable:
+# - Per-route metrics (instead of just per-service)
+# - Automatic retries for specific routes
+# - Route-specific timeouts
+# - Request/response classification
+
+---
+# ServiceProfile for service-a
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-a.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 10s
+
+  - name: GET /api/call-b
+    condition:
+      method: GET
+      pathRegex: /api/call-b
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 15s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+
+  - name: GET /api/call-c
+    condition:
+      method: GET
+      pathRegex: /api/call-c
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 15s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+
+  - name: POST /api/kafka/send
+    condition:
+      method: POST
+      pathRegex: /api/kafka/send/.*
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 30s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 5s
+
+  - name: GET /actuator/metrics
+    condition:
+      method: GET
+      pathRegex: /actuator/metrics.*
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 5s
+
+---
+# ServiceProfile for service-b
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-b.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 10s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+
+  - name: GET /api/call-c
+    condition:
+      method: GET
+      pathRegex: /api/call-c
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 15s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 5s
+
+---
+# ServiceProfile for service-c
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: service-c.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: GET /api/hello
+    condition:
+      method: GET
+      pathRegex: /api/hello
+    responseClasses:
+    - condition:
+        status:
+          min: 500
+          max: 599
+        isFailure: true
+    timeout: 10s
+    retryBudget:
+      retryRatio: 0.2
+      minRetriesPerSecond: 10
+      ttl: 10s
+
+  - name: GET /actuator/health
+    condition:
+      method: GET
+      pathRegex: /actuator/health
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 5s
+
+---
+# ServiceProfile for PostgreSQL
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: postgres.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: postgres-query
+    condition:
+      # All database connections
+      pathRegex: /.*
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 30s
+    retryBudget:
+      retryRatio: 0.1
+      minRetriesPerSecond: 5
+      ttl: 10s
+
+---
+# ServiceProfile for Kafka
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: kafka.services.svc.cluster.local
+  namespace: services
+spec:
+  routes:
+  - name: kafka-produce
+    condition:
+      pathRegex: /.*
+    responseClasses:
+    - condition:
+        status:
+          min: 200
+          max: 299
+        isFailure: false
+    timeout: 30s
+    retryBudget:
+      retryRatio: 0.1
+      minRetriesPerSecond: 5
+      ttl: 10s
