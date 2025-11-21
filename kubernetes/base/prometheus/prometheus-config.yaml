@@ -110,6 +110,18 @@ data:
         - source_labels: [__meta_kubernetes_pod_node_name]
           target_label: instance
 
+      # kube-state-metrics
+      - job_name: 'kube-state-metrics'
+        kubernetes_sd_configs:
+        - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+          action: keep
+          regex: monitoring;kube-state-metrics
+        - source_labels: [__meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: http-metrics
+
       # cAdvisor
       - job_name: 'cadvisor'
         kubernetes_sd_configs:
@@ -206,117 +218,17 @@ data:
           action: replace
           target_label: kubernetes_pod_name
 
-      # Kafka JMX Exporter
-      - job_name: 'kafka-jmx'
-        kubernetes_sd_configs:
-        - role: service
-          namespaces:
-            names:
-            - services
-        relabel_configs:
-        - source_labels: [__meta_kubernetes_service_name]
-          action: keep
-          regex: kafka-jmx-metrics
-        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
-          action: keep
-          regex: true
-        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_port]
-          action: replace
-          target_label: __address__
-          regex: ([^:]+)(?::\d+)?;(\d+)
-          replacement: $1:$2
-        - source_labels: [__meta_kubernetes_namespace]
-          action: replace
-          target_label: kubernetes_namespace
-        - source_labels: [__meta_kubernetes_service_name]
-          action: replace
-          target_label: kubernetes_name
-
-      # Kafka Exporter
+      # Kafka Exporter (consumer lag and topic metrics)
       - job_name: 'kafka-exporter'
         kubernetes_sd_configs:
-        - role: service
-          namespaces:
-            names:
-            - services
+        - role: endpoints
         relabel_configs:
-        - source_labels: [__meta_kubernetes_service_name]
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
           action: keep
-          regex: kafka-exporter
-        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          regex: services;kafka-exporter
+        - source_labels: [__meta_kubernetes_endpoint_port_name]
           action: keep
-          regex: true
-        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_port]
-          action: replace
-          target_label: __address__
-          regex: ([^:]+)(?::\d+)?;(\d+)
-          replacement: $1:$2
-        - source_labels: [__meta_kubernetes_namespace]
-          action: replace
-          target_label: kubernetes_namespace
-        - source_labels: [__meta_kubernetes_service_name]
-          action: replace
-          target_label: kubernetes_name
-
-      # Linkerd control plane metrics
-      - job_name: 'linkerd-controller'
-        kubernetes_sd_configs:
-        - role: pod
-          namespaces:
-            names:
-            - linkerd
-            - linkerd-viz
-        relabel_configs:
-        - source_labels:
-          - __meta_kubernetes_pod_label_linkerd_io_control_plane_component
-          - __meta_kubernetes_pod_label_linkerd_io_proxy_job
-          action: keep
-          regex: (.*);^$
-        - source_labels: [__meta_kubernetes_pod_container_port_name]
-          action: keep
-          regex: admin-http
-        - source_labels: [__meta_kubernetes_pod_container_name]
-          action: replace
-          target_label: component
-
-      # Linkerd proxy metrics (data plane)
-      - job_name: 'linkerd-proxy'
-        kubernetes_sd_configs:
-        - role: pod
-        relabel_configs:
-        - source_labels:
-          - __meta_kubernetes_pod_container_name
-          - __meta_kubernetes_pod_container_port_name
-          - __meta_kubernetes_pod_label_linkerd_io_control_plane_ns
-          action: keep
-          regex: ^linkerd-proxy;linkerd-admin;linkerd$
-        - source_labels: [__meta_kubernetes_namespace]
-          action: replace
-          target_label: namespace
-        - source_labels: [__meta_kubernetes_pod_name]
-          action: replace
-          target_label: pod
-        - source_labels: [__meta_kubernetes_pod_label_linkerd_io_proxy_job]
-          action: replace
-          target_label: k8s_job
-        - action: labeldrop
-          regex: __meta_kubernetes_pod_label_linkerd_io_proxy_job
-        - action: labelmap
-          regex: __meta_kubernetes_pod_label_linkerd_io_proxy_(.+)
-        - action: labeldrop
-          regex: __meta_kubernetes_pod_label_linkerd_io_proxy_(.+)
-        - action: labelmap
-          regex: __meta_kubernetes_pod_label_linkerd_io_(.+)
-        - action: labelmap
-          regex: __meta_kubernetes_pod_label_(.+)
-          replacement: __tmp_pod_label_$1
-        - action: labelmap
-          regex: __tmp_pod_label_linkerd_io_(.+)
-          replacement: __tmp_pod_label_$1
-        - action: labeldrop
-          regex: __tmp_pod_label_linkerd_io_(.+)
-        - action: labelmap
-          regex: __tmp_pod_label_(.+)
+          regex: metrics
 
     remote_write:
       - url: http://victoriametrics.monitoring.svc.cluster.local:8428/api/v1/write
