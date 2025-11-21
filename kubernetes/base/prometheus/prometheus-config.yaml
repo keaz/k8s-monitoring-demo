@@ -110,6 +110,18 @@ data:
         - source_labels: [__meta_kubernetes_pod_node_name]
           target_label: instance
 
+      # kube-state-metrics
+      - job_name: 'kube-state-metrics'
+        kubernetes_sd_configs:
+        - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+          action: keep
+          regex: monitoring;kube-state-metrics
+        - source_labels: [__meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: http-metrics
+
       # cAdvisor
       - job_name: 'cadvisor'
         kubernetes_sd_configs:
@@ -205,6 +217,18 @@ data:
         - source_labels: [__meta_kubernetes_pod_name]
           action: replace
           target_label: kubernetes_pod_name
+
+      # Kafka Exporter (consumer lag and topic metrics)
+      - job_name: 'kafka-exporter'
+        kubernetes_sd_configs:
+        - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name]
+          action: keep
+          regex: services;kafka-exporter
+        - source_labels: [__meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: metrics
 
     remote_write:
       - url: http://victoriametrics.monitoring.svc.cluster.local:8428/api/v1/write

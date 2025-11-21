@@ -16,8 +16,10 @@ resources:
 - otel-collector/otel-collector-config.yaml
 - otel-collector/otel-collector-deployment.yaml
 - node-exporter/node-exporter.yaml
+- kube-state-metrics/kube-state-metrics.yaml
 - services/service-a.yaml
 - services/service-b.yaml
 - services/service-c.yaml
+- kafka/kafka-exporter.yaml
 - postgres/postgres.yaml
 - postgres/postgres-exporter.yaml

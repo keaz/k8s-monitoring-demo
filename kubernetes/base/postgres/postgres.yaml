@@ -55,6 +55,9 @@ spec:
       - name: postgres
         image: postgres:15-alpine
         imagePullPolicy: IfNotPresent
+        args:
+        - "-c"
+        - "shared_preload_libraries=pg_stat_statements"
         ports:
         - containerPort: 5432
           name: postgres
@@ -104,6 +107,15 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
           failureThreshold: 3
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                until pg_isready -U "$POSTGRES_USER"; do sleep 2; done
+                psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements;"
       volumes:
       - name: postgres-storage
         persistentVolumeClaim:
